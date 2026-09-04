@@ -14,10 +14,12 @@ const supabase = createClient(
 
 export async function middleware(req: Request, res: Response, next: NextFunction) {
   const token = req.headers.authorization;
+  console.log("middleware outside try");
   try {
     const {data: {user}, error} = await supabase.auth.getUser(token);
     const address = user?.user_metadata.custom_claims.address;
     if(address){
+        console.log("inside middleware if body");
         req.userId = address;
         next();
     }else {

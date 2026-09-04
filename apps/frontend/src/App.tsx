@@ -37,7 +37,6 @@ function App() {
       <button
         onClick={async () => {
           await supabase.auth.getSession().then((supabase_res) => {
-            console.log(supabase_res.data.session?.access_token);
             axios.post(
               "http://localhost:3000/buy",
               {},
@@ -58,7 +57,6 @@ function App() {
       <button
         onClick={async () => {
           await supabase.auth.getSession().then((supabase_res) => {
-            console.log(supabase_res.data.session?.access_token);
             axios.post(
               "http://localhost:3000/sell",
               {},
@@ -73,6 +71,55 @@ function App() {
       >
         Click here for sell
       </button>
+
+      <br />
+      <br />
+      <button
+        onClick={async () => {
+          await supabase.auth.getSession().then((supabase_res) => {
+            const token = supabase_res.data;
+            axios.post(
+              "http://localhost:3000/split",
+              {},
+              {
+                headers: {
+                  authorization: token.session?.access_token,
+                },
+              },
+            );
+          });
+        }}
+      >
+        click here to split
+      </button>
+      <br />
+      <br />
+      <button
+        onClick={async () => {
+          await supabase.auth.getSession().then(async (supabase_res) => {
+            const token = supabase_res.data;
+            const response = await axios.post(
+              "http://localhost:3000/merge",
+              {
+                position: "YES",
+                quantity: 100,
+                price: 500,
+              },
+              {
+                headers: {
+                  authorization: token.session?.access_token,
+                },
+              },
+            );
+            console.log(response.data);
+          });
+        }}
+      >
+        Click to merge
+      </button>
+      <br/>
+      <br/>
+      
     </div>
   );
 }
