@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import {middleware} from "./middlewares/auth"
+import { prisma } from "../../packages/db";
 
 const app = express();
 
@@ -8,6 +9,7 @@ app.use(express.json());
 app.use(cors());
 
 app.post("/buy",middleware, (req, res) => {
+    prisma.market.findFirst();
     console.log("you bought the order")
     res.json({
         message: "you can buy here"
