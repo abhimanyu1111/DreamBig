@@ -119,6 +119,22 @@ function App() {
       </button>
       <br/>
       <br/>
+
+      <button
+      onClick={ async () => {
+        await supabase.auth.getSession().then(async (supabase_res) => {
+          const token = supabase_res.data;
+          await axios.get(
+            "http://localhost:3000/position",
+            {
+              headers:{
+                authorization: token.session?.access_token,
+              },
+            },
+          );
+        })
+      }}
+      >view position</button>
       
     </div>
   );
