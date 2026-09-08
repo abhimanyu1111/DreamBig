@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",
+    "uuidv4": "^6.2.13",
     "zod": "^4.6.5"
   }
 }

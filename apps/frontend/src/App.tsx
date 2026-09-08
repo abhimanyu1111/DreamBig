@@ -1,6 +1,7 @@
 import { useUser } from "./hooks/useUser";
 import { supabase } from "./hooks/useSupabase";
 import axios from "axios";
+import { useState } from "react";
 
 function App() {
   const claims = useUser();
@@ -39,7 +40,13 @@ function App() {
           await supabase.auth.getSession().then((supabase_res) => {
             axios.post(
               "http://localhost:3000/buy",
-              {},
+              {
+                marketId: "1",
+                side: "yes",
+                type: "buy",
+                price: 10,
+                qty: 10,
+              },
               {
                 headers: {
                   authorization: supabase_res.data.session?.access_token,
@@ -92,6 +99,7 @@ function App() {
       >
         click here to split
       </button>
+
       <br />
       <br />
       <button
@@ -117,25 +125,23 @@ function App() {
       >
         Click to merge
       </button>
-      <br/>
-      <br/>
+      <br />
+      <br />
 
       <button
-      onClick={ async () => {
-        await supabase.auth.getSession().then(async (supabase_res) => {
-          const token = supabase_res.data;
-          await axios.get(
-            "http://localhost:3000/position",
-            {
-              headers:{
+        onClick={async () => {
+          await supabase.auth.getSession().then(async (supabase_res) => {
+            const token = supabase_res.data;
+            await axios.get("http://localhost:3000/position", {
+              headers: {
                 authorization: token.session?.access_token,
               },
-            },
-          );
-        })
-      }}
-      >view position</button>
-      
+            });
+          });
+        }}
+      >
+        view position
+      </button>
     </div>
   );
 }
