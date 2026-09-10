@@ -734,7 +734,7 @@ app.post("/sell", middleware, async (req: Request, res: Response) => {
 });
 
 // ==========================================
-// 4. SPLIT & MERGE CONTRACT OPERATIONS
+// 4. SPLIT & MERGE CONTRACT OPERATIONS (Mint 1 YES + 1 NO for $1.00 USD)
 // ==========================================
 
 // Split: Pay $1.00 (100 cents) per share to mint 1 YES + 1 NO share
