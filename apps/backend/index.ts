@@ -228,7 +228,7 @@ app.get("/balance", middleware, async (req: Request, res: Response) => {
   }
 });
 
-// Faucet: Add test USD balance (for development & demo testing)
+// Faucet: Add test USD balance ($500 in cents) for portfolio testing
 app.post("/faucet", middleware, async (req: Request, res: Response) => {
   try {
     const amount = 50000; // $500.00 (in cents)
