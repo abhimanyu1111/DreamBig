@@ -837,7 +837,7 @@ app.post("/merge", middleware, async (req: Request, res: Response) => {
 // 5. MARKET RESOLUTION & PAYOUTS
 // ==========================================
 
-// Resolve a market and pay out winning positions (100 cents per winning share)
+// Resolve a market and distribute winning payouts ($1.00 per share) to holders
 app.post("/market/resolve", adminMiddleware, async (req: Request, res: Response) => {
   const { success, data } = ResolveMarketSchema.safeParse(req.body);
 
