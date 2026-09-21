@@ -60,7 +60,7 @@ function App() {
       const balanceData = await fetchBalance();
       setUsdBalance(balanceData.usdBalance);
       setWalletAddress(balanceData.address);
-      setIsAdmin(Boolean(balanceData.isAdmin));
+      setIsAdmin(Boolean(claims && balanceData.isAdmin));
 
       // 3. Fetch Positions & History
       const userPositions = await fetchPositions();
