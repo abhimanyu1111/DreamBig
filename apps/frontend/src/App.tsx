@@ -21,7 +21,7 @@ import { CreateMarketModal } from "./components/CreateMarketModal";
 import "./App.css";
 
 function App() {
-  const claims = useUser();
+  const user = useUser();
 
   // App State
   const [markets, setMarkets] = useState<Market[]>([]);
@@ -60,7 +60,7 @@ function App() {
       const balanceData = await fetchBalance();
       setUsdBalance(balanceData.usdBalance);
       setWalletAddress(balanceData.address);
-      setIsAdmin(Boolean(claims && balanceData.isAdmin));
+      setIsAdmin(Boolean(balanceData.isAdmin));
 
       // 3. Fetch Positions & History
       const userPositions = await fetchPositions();
@@ -77,7 +77,7 @@ function App() {
 
   useEffect(() => {
     loadData();
-  }, [claims]);
+  }, [user]);
 
   // Handle selecting a market
   const handleSelectMarket = async (market: Market) => {
@@ -106,7 +106,7 @@ function App() {
       <Navbar
         usdBalance={usdBalance}
         walletAddress={walletAddress}
-        isLoggedIn={Boolean(claims)}
+        isLoggedIn={Boolean(user)}
         isAdmin={isAdmin}
         onRefresh={loadData}
         onClaimFaucet={handleClaimFaucet}

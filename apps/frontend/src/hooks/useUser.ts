@@ -1,39 +1,25 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./useSupabase";
-import { type JwtPayload } from "@supabase/supabase-js";
+import type { User } from "@supabase/supabase-js";
 
 export function useUser() {
-  const [claims, setClaims] = useState<JwtPayload | null>(null);
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    const loadClaims = async () => {
-      const { data, error } = await supabase.auth.getClaims();
+    // Check initial active session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
 
-      if (error || !data) {
-        setClaims(null);
-        return;
-      }
-
-      setClaims(data.claims);
-    };
-
-    loadClaims();
-
+    // Listen to login/logout state changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      supabase.auth.getClaims().then(({ data, error }) => {
-        if (error || !data) {
-          setClaims(null);
-          return;
-        }
-
-        setClaims(data.claims);
-      });
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  return claims;
+  return user;
 }

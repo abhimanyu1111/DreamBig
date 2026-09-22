@@ -58,8 +58,8 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       <div className="navbar-right">
-        {/* Market Creator Button: RESTRICTED TO LOGGED-IN ADMIN ONLY */}
-        {isLoggedIn && isAdmin && (
+        {/* Market Creator Button: RESTRICTED TO ADMIN ONLY */}
+        {isAdmin && (
           <button className="btn-secondary btn-admin" onClick={onOpenCreateModal}>
             👑 + Create Market
           </button>
