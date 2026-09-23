@@ -148,7 +148,7 @@ function App() {
                     <span className="tag-live">Active Market</span>
                     <h2>{selectedMarket.title}</h2>
                     <p className="resolution-criteria">
-                      <strong>Resolution:</strong> {selectedMarket.resolutionDescription}
+                      <strong>Resolution Criteria:</strong> {selectedMarket.resolutionDescription}
                     </p>
                   </div>
 
