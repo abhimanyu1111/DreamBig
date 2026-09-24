@@ -25,7 +25,7 @@ const supabase = createClient(
   supabaseSecretKey || ""
 );
 
-// Known admin addresses (Your Solana wallet + dev wallets)
+// Known admin addresses (Your Solana wallet public key)
 const DEFAULT_ADMINS = [
   "EpmsQDaWxXQ5sLsnmbFcZMRSXZX6sR58cshNqv4AYL2M",
 ];
@@ -46,43 +46,34 @@ export function checkIsAdmin(address?: string): boolean {
   return allAdmins.includes(address.toLowerCase());
 }
 
-// 1. Regular User Auth Middleware (Requires cryptographic verification)
+// 1. Mandatory User Auth Middleware (Requires valid cryptographically signed Solana session)
 export async function middleware(req: Request, res: Response, next: NextFunction) {
   const token = req.headers.authorization?.replace("Bearer ", "");
 
   if (!token) {
     res.status(401).json({
-      message: "Please login with your wallet to continue",
+      message: "Please login with your Solana wallet to continue",
     });
     return;
   }
 
   try {
-    let address: string | undefined;
+    // Verify token with Supabase (validated by Solana Ed25519 signature from wallet)
+    const { data: { user }, error } = await supabase.auth.getUser(token);
 
-    // Optional dev bypass ONLY for mock accounts (e.g. dev-wallet-alice for local test scripts)
-    // Real Solana public keys CANNOT use this bypass and MUST provide a signed Supabase JWT!
-    if (token.startsWith("dev-wallet-") && !token.includes("EpmsQDa")) {
-      address = token;
-    } else {
-      // CRYPTOGRAPHIC VERIFICATION:
-      // Verify token with Supabase (validated by Solana Ed25519 signature from Phantom)
-      const { data: { user }, error } = await supabase.auth.getUser(token);
-
-      if (error || !user) {
-        res.status(403).json({
-          message: "Invalid or expired cryptographic session. Please sign in with your wallet.",
-        });
-        return;
-      }
-
-      // Extract verified Solana wallet address from Supabase custom claims
-      address = user.user_metadata?.custom_claims?.address || user.email || user.id;
+    if (error || !user) {
+      res.status(401).json({
+        message: "Invalid or expired session. Please connect your Solana wallet.",
+      });
+      return;
     }
 
+    // Extract verified Solana wallet address from Supabase custom claims
+    const address = user.user_metadata?.custom_claims?.address || user.email || user.id;
+
     if (!address) {
-      res.status(403).json({
-        message: "No wallet address associated with this user",
+      res.status(401).json({
+        message: "No verified Solana wallet address found for this user",
       });
       return;
     }
@@ -95,7 +86,7 @@ export async function middleware(req: Request, res: Response, next: NextFunction
       update: {},
       create: {
         address,
-        usdBalance: 100000, // Give 1,000 USD default balance for new users to test!
+        usdBalance: 0, // Starts at 0, user can click Faucet to claim test funds
       },
     });
 
@@ -105,8 +96,8 @@ export async function middleware(req: Request, res: Response, next: NextFunction
     next();
   } catch (error) {
     console.error("Auth middleware error:", error);
-    res.status(403).json({
-      message: "Authentication failed",
+    res.status(401).json({
+      message: "Authentication failed. Please connect your wallet.",
     });
   }
 }

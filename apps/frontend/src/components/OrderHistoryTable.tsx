@@ -3,17 +3,33 @@ import type { OrderHistoryItem } from "../types";
 
 interface OrderHistoryTableProps {
   history: OrderHistoryItem[];
+  isLoggedIn: boolean;
+  onConnectWallet: () => void;
 }
 
-export const OrderHistoryTable: React.FC<OrderHistoryTableProps> = ({ history }) => {
+export const OrderHistoryTable: React.FC<OrderHistoryTableProps> = ({
+  history,
+  isLoggedIn,
+  onConnectWallet,
+}) => {
   return (
     <div className="table-card">
       <div className="table-header-row">
         <h3>📜 Order & Trade History</h3>
-        <span className="table-sub">{history.length} record(s)</span>
+        <span className="table-sub">
+          {isLoggedIn ? `${history.length} record(s)` : "Login required"}
+        </span>
       </div>
 
-      {history.length === 0 ? (
+      {!isLoggedIn ? (
+        <div className="empty-table-state">
+          <span>Connect your Solana wallet to view past orders and executions.</span>
+          <br />
+          <button className="btn-connect-solana" style={{ marginTop: "0.85rem" }} onClick={onConnectWallet}>
+            🟣 Connect Solana Wallet
+          </button>
+        </div>
+      ) : history.length === 0 ? (
         <div className="empty-table-state">
           <span>No trade history recorded yet.</span>
         </div>

@@ -21,10 +21,12 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenCreateModal,
 }) => {
   // Format balance in cents to standard currency ($XX.XX)
-  const formattedBalance = (usdBalance / 100).toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-  });
+  const formattedBalance = isLoggedIn
+    ? (usdBalance / 100).toLocaleString("en-US", {
+        style: "currency",
+        currency: "USD",
+      })
+    : "$0.00";
 
   // Shorten Solana or wallet address for clean display
   const shortAddress =
@@ -58,28 +60,40 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       <div className="navbar-right">
-        {/* Market Creator Button: RESTRICTED TO ADMIN ONLY */}
-        {isAdmin && (
+        {/* Market Creator Button: RESTRICTED TO LOGGED-IN ADMIN ONLY */}
+        {isLoggedIn && isAdmin && (
           <button className="btn-secondary btn-admin" onClick={onOpenCreateModal}>
             👑 + Create Market
           </button>
         )}
 
-        {/* Faucet Button */}
-        <button
-          className="btn-faucet"
-          onClick={onClaimFaucet}
-          title="Claim $500 free test balance"
-        >
-          🎁 Claim +$500 Faucet
-        </button>
+        {/* Faucet Button: Only functional when logged in */}
+        {isLoggedIn ? (
+          <button
+            className="btn-faucet"
+            onClick={onClaimFaucet}
+            title="Claim $500 free test balance"
+          >
+            🎁 Claim +$500 Faucet
+          </button>
+        ) : (
+          <button
+            className="btn-faucet disabled"
+            onClick={handleSolanaLogin}
+            title="Connect wallet to claim test funds"
+          >
+            🎁 Connect for Faucet
+          </button>
+        )}
 
         {/* USD Balance Card */}
-        <div className="balance-pill" onClick={onRefresh} title="Click to refresh balance">
-          <span className="balance-label">Cash:</span>
-          <span className="balance-value">{formattedBalance}</span>
-          <span className="refresh-icon">🔄</span>
-        </div>
+        {isLoggedIn ? (
+          <div className="balance-pill" onClick={onRefresh} title="Click to refresh balance">
+            <span className="balance-label">Cash:</span>
+            <span className="balance-value">{formattedBalance}</span>
+            <span className="refresh-icon">🔄</span>
+          </div>
+        ) : null}
 
         {/* Wallet Connection */}
         {isLoggedIn ? (

@@ -5,12 +5,16 @@ import { placeOrder, splitContract, mergeContract, resolveMarket } from "../api"
 interface TradingPanelProps {
   market: Market;
   isAdmin: boolean;
+  isLoggedIn: boolean;
+  onConnectWallet: () => void;
   onTradeSuccess: () => void;
 }
 
 export const TradingPanel: React.FC<TradingPanelProps> = ({
   market,
   isAdmin,
+  isLoggedIn,
+  onConnectWallet,
   onTradeSuccess,
 }) => {
   const [activeTab, setActiveTab] = useState<"trade" | "mint" | "settle">("trade");
@@ -39,6 +43,11 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
   // Handle Trade Execution
   const handleExecuteTrade = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isLoggedIn) {
+      onConnectWallet();
+      return;
+    }
+
     setLoading(true);
     setFeedback(null);
 
@@ -68,6 +77,10 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
 
   // Handle Split
   const handleSplit = async () => {
+    if (!isLoggedIn) {
+      onConnectWallet();
+      return;
+    }
     setLoading(true);
     setFeedback(null);
     try {
@@ -86,6 +99,10 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
 
   // Handle Merge
   const handleMerge = async () => {
+    if (!isLoggedIn) {
+      onConnectWallet();
+      return;
+    }
     setLoading(true);
     setFeedback(null);
     try {
@@ -104,6 +121,10 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
 
   // Handle Market Resolution (Admin only)
   const handleResolve = async () => {
+    if (!isLoggedIn) {
+      onConnectWallet();
+      return;
+    }
     setLoading(true);
     setFeedback(null);
     try {
@@ -140,7 +161,7 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
         </button>
 
         {/* ADMIN ONLY TAB */}
-        {isAdmin && (
+        {isAdmin && isLoggedIn && (
           <button
             className={`panel-tab ${activeTab === "settle" ? "active" : ""}`}
             onClick={() => setActiveTab("settle")}
@@ -164,6 +185,15 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
           {isResolved ? (
             <div className="resolved-banner">
               ⚠️ This market is already resolved to <strong>{market.resolution}</strong>. Trading is closed.
+            </div>
+          ) : !isLoggedIn ? (
+            <div className="auth-required-banner">
+              <span className="auth-lock-icon">🔒</span>
+              <h4>Wallet Login Required</h4>
+              <p>Please connect your Solana wallet to buy or sell shares on this prediction market.</p>
+              <button type="button" className="btn-connect-solana" onClick={onConnectWallet}>
+                🟣 Connect Solana Wallet
+              </button>
             </div>
           ) : (
             <form onSubmit={handleExecuteTrade} className="trade-form">
@@ -300,41 +330,54 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
             You can split cash into both shares, or merge pairs back to cash anytime.
           </p>
 
-          <div className="form-group">
-            <label>Contract Pairs (Shares)</label>
-            <input
-              type="number"
-              min="1"
-              value={contractQty}
-              onChange={(e) => setContractQty(Math.max(1, Number(e.target.value)))}
-              className="number-input-full"
-            />
-          </div>
+          {!isLoggedIn ? (
+            <div className="auth-required-banner">
+              <span className="auth-lock-icon">🔒</span>
+              <h4>Wallet Login Required</h4>
+              <p>Please connect your Solana wallet to split or merge contract pairs.</p>
+              <button type="button" className="btn-connect-solana" onClick={onConnectWallet}>
+                🟣 Connect Solana Wallet
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="form-group">
+                <label>Contract Pairs (Shares)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={contractQty}
+                  onChange={(e) => setContractQty(Math.max(1, Number(e.target.value)))}
+                  className="number-input-full"
+                />
+              </div>
 
-          <div className="mint-actions-row">
-            <button
-              onClick={handleSplit}
-              disabled={loading || isResolved}
-              className="btn-split"
-            >
-              📥 Split ${contractQty}.00 → {contractQty} YES + {contractQty} NO
-            </button>
+              <div className="mint-actions-row">
+                <button
+                  onClick={handleSplit}
+                  disabled={loading || isResolved}
+                  className="btn-split"
+                >
+                  📥 Split ${contractQty}.00 → {contractQty} YES + {contractQty} NO
+                </button>
 
-            <button
-              onClick={handleMerge}
-              disabled={loading}
-              className="btn-merge"
-            >
-              📤 Merge {contractQty} YES & NO → ${contractQty}.00 Cash
-            </button>
-          </div>
+                <button
+                  onClick={handleMerge}
+                  disabled={loading}
+                  className="btn-merge"
+                >
+                  📤 Merge {contractQty} YES & NO → ${contractQty}.00 Cash
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
       {/* =========================================
           TAB 3: MARKET RESOLUTION (ADMIN ONLY)
           ========================================= */}
-      {activeTab === "settle" && isAdmin && (
+      {activeTab === "settle" && isAdmin && isLoggedIn && (
         <div className="settle-container">
           <h4>👑 Market Resolution (Admin Panel)</h4>
           <p className="settle-desc">

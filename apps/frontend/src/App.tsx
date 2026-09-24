@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useUser } from "./hooks/useUser";
+import { supabase } from "./hooks/useSupabase";
 import type { Market, UserPosition, OrderHistoryItem } from "./types";
 import {
   fetchMarkets,
@@ -22,12 +23,13 @@ import "./App.css";
 
 function App() {
   const user = useUser();
+  const isLoggedIn = Boolean(user);
 
   // App State
   const [markets, setMarkets] = useState<Market[]>([]);
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
   const [usdBalance, setUsdBalance] = useState<number>(0);
-  const [walletAddress, setWalletAddress] = useState<string>("dev-wallet-demo");
+  const [walletAddress, setWalletAddress] = useState<string>("");
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [positions, setPositions] = useState<UserPosition[]>([]);
   const [history, setHistory] = useState<OrderHistoryItem[]>([]);
@@ -37,10 +39,22 @@ function App() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // Trigger Solana Web3 Connect
+  const handleConnectWallet = async () => {
+    try {
+      await supabase.auth.signInWithWeb3({
+        chain: "solana",
+        statement: "I confirm that I want to sign in to prediction market DreamBig",
+      });
+    } catch (err) {
+      console.error("Solana login error:", err);
+    }
+  };
+
   // Load all app data from backend
   const loadData = useCallback(async () => {
     try {
-      // 1. Fetch markets
+      // 1. Fetch public markets list
       const marketList = await fetchMarkets();
       setMarkets(marketList);
 
@@ -56,28 +70,37 @@ function App() {
         }
       }
 
-      // 2. Fetch User Profile
-      const balanceData = await fetchBalance();
-      setUsdBalance(balanceData.usdBalance);
-      setWalletAddress(balanceData.address);
-      setIsAdmin(Boolean(balanceData.isAdmin));
+      // 2. Fetch User Profile only if logged in
+      if (isLoggedIn) {
+        const balanceData = await fetchBalance();
+        setUsdBalance(balanceData.usdBalance);
+        setWalletAddress(balanceData.address);
+        setIsAdmin(Boolean(balanceData.isAdmin));
 
-      // 3. Fetch Positions & History
-      const userPositions = await fetchPositions();
-      setPositions(userPositions);
+        // 3. Fetch Positions & History
+        const userPositions = await fetchPositions();
+        setPositions(userPositions);
 
-      const userHistory = await fetchHistory();
-      setHistory(userHistory);
+        const userHistory = await fetchHistory();
+        setHistory(userHistory);
+      } else {
+        // Clear user state when logged out
+        setUsdBalance(0);
+        setWalletAddress("");
+        setIsAdmin(false);
+        setPositions([]);
+        setHistory([]);
+      }
     } catch (err) {
-      console.warn("Data load notice (backend might be starting):", err);
+      console.warn("Data load notice:", err);
     } finally {
       setLoading(false);
     }
-  }, [selectedMarket]);
+  }, [selectedMarket, isLoggedIn]);
 
   useEffect(() => {
     loadData();
-  }, [user]);
+  }, [user, loadData]);
 
   // Handle selecting a market
   const handleSelectMarket = async (market: Market) => {
@@ -91,12 +114,16 @@ function App() {
 
   // Handle Faucet Claim
   const handleClaimFaucet = async () => {
+    if (!isLoggedIn) {
+      handleConnectWallet();
+      return;
+    }
     try {
       const newBalance = await claimFaucet();
       setUsdBalance(newBalance);
       alert("🎉 Added +$500.00 USD test balance to your wallet!");
-    } catch (err) {
-      console.error("Faucet error:", err);
+    } catch (err: any) {
+      alert(err.message || "Failed to claim faucet");
     }
   };
 
@@ -106,7 +133,7 @@ function App() {
       <Navbar
         usdBalance={usdBalance}
         walletAddress={walletAddress}
-        isLoggedIn={Boolean(user)}
+        isLoggedIn={isLoggedIn}
         isAdmin={isAdmin}
         onRefresh={loadData}
         onClaimFaucet={handleClaimFaucet}
@@ -158,6 +185,8 @@ function App() {
                       <TradingPanel
                         market={selectedMarket}
                         isAdmin={isAdmin}
+                        isLoggedIn={isLoggedIn}
+                        onConnectWallet={handleConnectWallet}
                         onTradeSuccess={loadData}
                       />
                     </div>
@@ -201,13 +230,19 @@ function App() {
             {bottomTab === "positions" ? (
               <PositionsTable
                 positions={positions}
+                isLoggedIn={isLoggedIn}
+                onConnectWallet={handleConnectWallet}
                 onSelectMarket={(marketId) => {
                   const m = markets.find((item) => item.id === marketId);
                   if (m) handleSelectMarket(m);
                 }}
               />
             ) : (
-              <OrderHistoryTable history={history} />
+              <OrderHistoryTable
+                history={history}
+                isLoggedIn={isLoggedIn}
+                onConnectWallet={handleConnectWallet}
+              />
             )}
           </div>
         </section>
