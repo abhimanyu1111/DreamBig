@@ -860,7 +860,59 @@ app.post("/market/resolve", adminMiddleware, async (req: Request, res: Response)
         throw new Error("Market is already resolved");
       }
 
-      // Find all positions in this market
+      const yesOrderbook = parseOrderbook(market.yesOrderbook);
+      const noOrderbook = parseOrderbook(market.noOrderbook);
+
+      // 1. Refund all resting unfilled orders from both orderbooks before settling
+      // YES Orderbook:
+      for (const priceKey of Object.keys(yesOrderbook)) {
+        const price = Number(priceKey);
+        const tier = yesOrderbook[price];
+        if (!tier) continue;
+
+        for (const order of tier.orders) {
+          const unfilledQty = order.qty - order.filledQty;
+          if (unfilledQty <= 0) continue;
+
+          if (order.reverseOrder) {
+            // Resting BUY NO order placed at (100 - price) cents: refund locked cash
+            const refundAmount = unfilledQty * (100 - price);
+            await tx.user.update({
+              where: { id: order.userId },
+              data: { usdBalance: { increment: refundAmount } },
+            });
+          } else {
+            // Resting SELL YES order: return unsold YES shares to user position
+            await updatePosition(tx, order.userId, data.marketId, "YES", unfilledQty);
+          }
+        }
+      }
+
+      // NO Orderbook:
+      for (const priceKey of Object.keys(noOrderbook)) {
+        const price = Number(priceKey);
+        const tier = noOrderbook[price];
+        if (!tier) continue;
+
+        for (const order of tier.orders) {
+          const unfilledQty = order.qty - order.filledQty;
+          if (unfilledQty <= 0) continue;
+
+          if (order.reverseOrder) {
+            // Resting BUY YES order placed at (100 - price) cents: refund locked cash
+            const refundAmount = unfilledQty * (100 - price);
+            await tx.user.update({
+              where: { id: order.userId },
+              data: { usdBalance: { increment: refundAmount } },
+            });
+          } else {
+            // Resting SELL NO order: return unsold NO shares to user position
+            await updatePosition(tx, order.userId, data.marketId, "NO", unfilledQty);
+          }
+        }
+      }
+
+      // 2. Pay out all positions (including any returned unsold shares from resting orders)
       const positions = await tx.position.findMany({
         where: { marketId: data.marketId, qty: { gt: 0 } },
       });
@@ -882,7 +934,7 @@ app.post("/market/resolve", adminMiddleware, async (req: Request, res: Response)
         });
       }
 
-      // Mark market as resolved and clear open orderbooks
+      // 3. Mark market as resolved and clear open orderbooks
       await tx.market.update({
         where: { id: data.marketId },
         data: {
