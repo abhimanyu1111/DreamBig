@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import type { Market } from "../types";
 import { placeOrder, splitContract, mergeContract, resolveMarket } from "../api";
 
@@ -34,6 +34,12 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
   // Loading and Alert State
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ message: string; isError: boolean } | null>(null);
+
+  // Synchronize price and reset feedback when switching to a different market
+  useEffect(() => {
+    setPrice(side === "yes" ? market.yesPrice : market.noPrice);
+    setFeedback(null);
+  }, [market.id]);
 
   // Cost and payout calculation
   const totalCost = ((price * qty) / 100).toFixed(2);

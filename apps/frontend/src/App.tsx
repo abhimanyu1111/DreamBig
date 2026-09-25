@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useUser } from "./hooks/useUser";
 import { supabase } from "./hooks/useSupabase";
 import type { Market, UserPosition, OrderHistoryItem } from "./types";
@@ -28,6 +28,7 @@ function App() {
   // App State
   const [markets, setMarkets] = useState<Market[]>([]);
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
+  const selectedMarketIdRef = useRef<string | null>(null);
   const [usdBalance, setUsdBalance] = useState<number>(0);
   const [walletAddress, setWalletAddress] = useState<string>("");
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
@@ -60,11 +61,13 @@ function App() {
 
       // Default select first active market or keep selected
       if (marketList.length > 0) {
-        const toSelect = selectedMarket
-          ? marketList.find((m) => m.id === selectedMarket.id) || marketList[0]
+        const currentActiveId = selectedMarketIdRef.current;
+        const toSelect = currentActiveId
+          ? marketList.find((m) => m.id === currentActiveId) || marketList[0]
           : marketList.find((m) => !m.resolution) || marketList[0];
 
         if (toSelect) {
+          selectedMarketIdRef.current = toSelect.id;
           const detailed = await fetchMarketDetails(toSelect.id);
           setSelectedMarket(detailed);
         }
@@ -96,14 +99,15 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [selectedMarket, isLoggedIn]);
+  }, [isLoggedIn]);
 
   useEffect(() => {
     loadData();
   }, [user, loadData]);
 
-  // Handle selecting a market
+  // Handle selecting a market without triggering full app re-fetch loop
   const handleSelectMarket = async (market: Market) => {
+    selectedMarketIdRef.current = market.id;
     try {
       const detailed = await fetchMarketDetails(market.id);
       setSelectedMarket(detailed);

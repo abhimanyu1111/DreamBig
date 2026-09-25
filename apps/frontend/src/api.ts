@@ -41,10 +41,17 @@ export async function fetchBalance(): Promise<{ usdBalance: number; address: str
   if (!token) {
     return { usdBalance: 0, address: "", isAdmin: false };
   }
-  const res = await axios.get(`${API_BASE}/balance`, {
-    headers: { authorization: token },
-  });
-  return res.data;
+  try {
+    const res = await axios.get(`${API_BASE}/balance`, {
+      headers: { authorization: token },
+    });
+    return res.data;
+  } catch (err: any) {
+    if (err?.response?.status === 401) {
+      return { usdBalance: 0, address: "", isAdmin: false };
+    }
+    throw err;
+  }
 }
 
 // 5. Add $500 test funds (Faucet - Requires login)
@@ -65,10 +72,15 @@ export async function fetchPositions(): Promise<UserPosition[]> {
   const token = await getAuthHeader();
   if (!token) return [];
 
-  const res = await axios.get<{ positions: UserPosition[] }>(`${API_BASE}/position`, {
-    headers: { authorization: token },
-  });
-  return res.data.positions;
+  try {
+    const res = await axios.get<{ positions: UserPosition[] }>(`${API_BASE}/position`, {
+      headers: { authorization: token },
+    });
+    return res.data.positions;
+  } catch (err: any) {
+    if (err?.response?.status === 401) return [];
+    throw err;
+  }
 }
 
 // 7. Fetch user trade history (Requires login)
@@ -76,10 +88,15 @@ export async function fetchHistory(): Promise<OrderHistoryItem[]> {
   const token = await getAuthHeader();
   if (!token) return [];
 
-  const res = await axios.get<{ history: OrderHistoryItem[] }>(`${API_BASE}/history`, {
-    headers: { authorization: token },
-  });
-  return res.data.history;
+  try {
+    const res = await axios.get<{ history: OrderHistoryItem[] }>(`${API_BASE}/history`, {
+      headers: { authorization: token },
+    });
+    return res.data.history;
+  } catch (err: any) {
+    if (err?.response?.status === 401) return [];
+    throw err;
+  }
 }
 
 // 8. Place order (Buy/Sell YES or NO - Requires login)
