@@ -9,6 +9,7 @@ import {
   fetchPositions,
   fetchHistory,
   claimFaucet,
+  deleteMarket,
 } from "./api";
 
 import { Navbar } from "./components/Navbar";
@@ -131,6 +132,25 @@ function App() {
     }
   };
 
+  // Handle Delete Market (Admin only)
+  const handleDeleteMarket = async (marketId: string) => {
+    const toDelete = markets.find((m) => m.id === marketId) || selectedMarket;
+    const confirmMsg = `Are you sure you want to delete "${toDelete?.title || "this market"}"?\n\nThis will permanently delete the market and its records from the database.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      await deleteMarket(marketId);
+      alert("🗑️ Market deleted successfully!");
+      if (selectedMarket?.id === marketId) {
+        setSelectedMarket(null);
+        selectedMarketIdRef.current = null;
+      }
+      await loadData();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || "Failed to delete market");
+    }
+  };
+
   return (
     <div className="app-container">
       {/* Top Navigation */}
@@ -176,7 +196,21 @@ function App() {
               {selectedMarket ? (
                 <>
                   <div className="selected-market-header">
-                    <span className="tag-live">Active Market</span>
+                    <div className="market-header-top-row">
+                      <span className={selectedMarket.resolution ? "tag-resolved" : "tag-live"}>
+                        {selectedMarket.resolution ? `Resolved: ${selectedMarket.resolution}` : "Active Market"}
+                      </span>
+                      {isAdmin && isLoggedIn && (
+                        <button
+                          type="button"
+                          className="btn-delete-market"
+                          onClick={() => handleDeleteMarket(selectedMarket.id)}
+                          title="Delete this market as admin"
+                        >
+                          🗑️ Delete Market
+                        </button>
+                      )}
+                    </div>
                     <h2>{selectedMarket.title}</h2>
                     <p className="resolution-criteria">
                       <strong>Resolution Criteria:</strong> {selectedMarket.resolutionDescription}

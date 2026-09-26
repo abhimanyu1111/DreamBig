@@ -951,6 +951,89 @@ app.post("/market/resolve", adminMiddleware, async (req: Request, res: Response)
   }
 });
 
+// 13. Delete Market (Admin only)
+app.delete("/market/:id", adminMiddleware, async (req: Request, res: Response) => {
+  const marketId = req.params.id;
+
+  if (!marketId) {
+    res.status(400).json({ message: "Market ID is required" });
+    return;
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const market = await tx.market.findUnique({
+        where: { id: marketId },
+      });
+
+      if (!market) {
+        throw new Error("Market not found");
+      }
+
+      // If the market had any unfilled resting orders, refund locked cash before deletion
+      const yesOrderbook = parseOrderbook(market.yesOrderbook);
+      const noOrderbook = parseOrderbook(market.noOrderbook);
+
+      for (const priceKey of Object.keys(yesOrderbook)) {
+        const price = Number(priceKey);
+        const tier = yesOrderbook[price];
+        if (!tier) continue;
+
+        for (const order of tier.orders) {
+          const unfilledQty = order.qty - order.filledQty;
+          if (unfilledQty <= 0) continue;
+
+          if (order.reverseOrder) {
+            const refundAmount = unfilledQty * (100 - price);
+            await tx.user.update({
+              where: { id: order.userId },
+              data: { usdBalance: { increment: refundAmount } },
+            });
+          }
+        }
+      }
+
+      for (const priceKey of Object.keys(noOrderbook)) {
+        const price = Number(priceKey);
+        const tier = noOrderbook[price];
+        if (!tier) continue;
+
+        for (const order of tier.orders) {
+          const unfilledQty = order.qty - order.filledQty;
+          if (unfilledQty <= 0) continue;
+
+          if (order.reverseOrder) {
+            const refundAmount = unfilledQty * (100 - price);
+            await tx.user.update({
+              where: { id: order.userId },
+              data: { usdBalance: { increment: refundAmount } },
+            });
+          }
+        }
+      }
+
+      // Delete associated positions and trade history in this market
+      await tx.position.deleteMany({
+        where: { marketId },
+      });
+
+      await tx.orderHistory.deleteMany({
+        where: { marketId },
+      });
+
+      // Delete the market itself
+      await tx.market.delete({
+        where: { id: marketId },
+      });
+    });
+
+    res.json({ message: "Market deleted successfully" });
+  } catch (error: any) {
+    console.error("Delete market error:", error);
+    res.status(400).json({ message: error.message || "Failed to delete market" });
+  }
+});
+
 // ==========================================
 // START SERVER
 // ==========================================

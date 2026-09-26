@@ -154,3 +154,14 @@ export async function resolveMarket(marketId: string, resolution: "YES" | "NO") 
   );
   return res.data;
 }
+
+// 12. Delete Market (Admin only)
+export async function deleteMarket(marketId: string) {
+  const token = await getAuthHeader();
+  if (!token) throw new Error("Please connect your Solana wallet first.");
+
+  const res = await axios.delete(`${API_BASE}/market/${marketId}`, {
+    headers: { authorization: token },
+  });
+  return res.data;
+}
