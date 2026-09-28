@@ -26,7 +26,7 @@ export const OrderHistoryTable: React.FC<OrderHistoryTableProps> = ({
           <span>Connect your Solana wallet to view past orders and executions.</span>
           <br />
           <button className="btn-connect-solana" style={{ marginTop: "0.85rem" }} onClick={onConnectWallet}>
-            🟣 Connect Solana Wallet
+            🟣 Login via Solana
           </button>
         </div>
       ) : history.length === 0 ? (

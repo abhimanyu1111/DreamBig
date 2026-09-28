@@ -67,22 +67,14 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         )}
 
-        {/* Faucet Button: Only functional when logged in */}
-        {isLoggedIn ? (
+        {/* Faucet Button: Only visible when logged in */}
+        {isLoggedIn && (
           <button
             className="btn-faucet"
             onClick={onClaimFaucet}
             title="Claim $500 free test balance"
           >
             🎁 Claim +$500 Faucet
-          </button>
-        ) : (
-          <button
-            className="btn-faucet disabled"
-            onClick={handleSolanaLogin}
-            title="Connect wallet to claim test funds"
-          >
-            🎁 Connect for Faucet
           </button>
         )}
 
@@ -109,7 +101,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         ) : (
           <button className="btn-connect-solana" onClick={handleSolanaLogin}>
-            🟣 Connect Solana
+            🟣 Login via Solana
           </button>
         )}
       </div>

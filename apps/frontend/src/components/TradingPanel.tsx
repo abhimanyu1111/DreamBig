@@ -198,7 +198,7 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
               <h4>Wallet Login Required</h4>
               <p>Please connect your Solana wallet to buy or sell shares on this prediction market.</p>
               <button type="button" className="btn-connect-solana" onClick={onConnectWallet}>
-                🟣 Connect Solana Wallet
+                🟣 Login via Solana
               </button>
             </div>
           ) : (
@@ -342,7 +342,7 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
               <h4>Wallet Login Required</h4>
               <p>Please connect your Solana wallet to split or merge contract pairs.</p>
               <button type="button" className="btn-connect-solana" onClick={onConnectWallet}>
-                🟣 Connect Solana Wallet
+                🟣 Login via Solana
               </button>
             </div>
           ) : (
