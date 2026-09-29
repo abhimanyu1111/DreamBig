@@ -2,7 +2,7 @@ import axios from "axios";
 import { supabase } from "./hooks/useSupabase";
 import type { Market, UserPosition, OrderHistoryItem } from "./types";
 
-const API_BASE = "http://localhost:3000";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
 // Helper: Get active authorization token from Supabase session
 export async function getAuthHeader(): Promise<string> {
