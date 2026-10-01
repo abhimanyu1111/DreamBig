@@ -36,12 +36,16 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const handleSolanaLogin = async () => {
     try {
-      await supabase.auth.signInWithWeb3({
+      const res = await supabase.auth.signInWithWeb3({
         chain: "solana",
         statement: "I confirm that I want to sign in to prediction market DreamBig",
       });
-    } catch (err) {
+      if (res.error) {
+        alert("Login notice: " + res.error.message);
+      }
+    } catch (err: any) {
       console.error("Solana login error:", err);
+      alert("Solana login notice: " + (err.message || "User cancelled or wallet rejected"));
     }
   };
 

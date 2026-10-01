@@ -44,19 +44,23 @@ function App() {
   // Trigger Solana Web3 Connect
   const handleConnectWallet = async () => {
     try {
-      await supabase.auth.signInWithWeb3({
+      const res = await supabase.auth.signInWithWeb3({
         chain: "solana",
         statement: "I confirm that I want to sign in to prediction market DreamBig",
       });
-    } catch (err) {
+      if (res.error) {
+        alert("Login notice: " + res.error.message);
+      }
+    } catch (err: any) {
       console.error("Solana login error:", err);
+      alert("Solana login notice: " + (err.message || "User cancelled or wallet rejected"));
     }
   };
 
-  // Load all app data from backend
+  // Load all app data from backend with independent error boundaries
   const loadData = useCallback(async () => {
+    // 1. Fetch public markets list
     try {
-      // 1. Fetch public markets list
       const marketList = await fetchMarkets();
       setMarkets(marketList);
 
@@ -73,34 +77,43 @@ function App() {
           setSelectedMarket(detailed);
         }
       }
+    } catch (err) {
+      console.warn("Markets load notice:", err);
+    }
 
-      // 2. Fetch User Profile only if logged in
-      if (isLoggedIn) {
+    // 2. Fetch User Profile independently if logged in
+    if (isLoggedIn) {
+      // Immediate optimistic address from Supabase user claims
+      const optimisticAddress = (user?.user_metadata as any)?.custom_claims?.address || "";
+      if (optimisticAddress && !walletAddress) {
+        setWalletAddress(optimisticAddress);
+      }
+
+      try {
         const balanceData = await fetchBalance();
         setUsdBalance(balanceData.usdBalance);
-        setWalletAddress(balanceData.address);
+        if (balanceData.address) setWalletAddress(balanceData.address);
         setIsAdmin(Boolean(balanceData.isAdmin));
 
-        // 3. Fetch Positions & History
         const userPositions = await fetchPositions();
         setPositions(userPositions);
 
         const userHistory = await fetchHistory();
         setHistory(userHistory);
-      } else {
-        // Clear user state when logged out
-        setUsdBalance(0);
-        setWalletAddress("");
-        setIsAdmin(false);
-        setPositions([]);
-        setHistory([]);
+      } catch (authErr) {
+        console.warn("User data load notice:", authErr);
       }
-    } catch (err) {
-      console.warn("Data load notice:", err);
-    } finally {
-      setLoading(false);
+    } else {
+      // Clear user state when logged out
+      setUsdBalance(0);
+      setWalletAddress("");
+      setIsAdmin(false);
+      setPositions([]);
+      setHistory([]);
     }
-  }, [isLoggedIn]);
+
+    setLoading(false);
+  }, [isLoggedIn, user]);
 
   useEffect(() => {
     loadData();
