@@ -35,6 +35,23 @@ export const Navbar: React.FC<NavbarProps> = ({
       : walletAddress;
 
   const handleSolanaLogin = async () => {
+    if (typeof window !== "undefined" && !(window as any).solana) {
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      if (isMobile) {
+        const currentUrl = encodeURIComponent(window.location.href);
+        const openPhantom = window.confirm(
+          "Solana wallet extension not found in mobile browser.\n\nWould you like to open DreamBig in the Phantom Wallet app to log in?"
+        );
+        if (openPhantom) {
+          window.location.href = `https://phantom.app/ul/browse/${currentUrl}`;
+        }
+        return;
+      } else {
+        alert("No Solana wallet extension detected! Please install the Phantom extension (phantom.app) in your browser.");
+        return;
+      }
+    }
+
     try {
       const res = await supabase.auth.signInWithWeb3({
         chain: "solana",
