@@ -84,7 +84,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Market Creator Button: RESTRICTED TO LOGGED-IN ADMIN ONLY */}
         {isLoggedIn && isAdmin && (
           <button className="btn-secondary btn-admin" onClick={onOpenCreateModal}>
-            👑 + Create Market
+            <span className="hide-on-mobile">👑 + Create Market</span>
+            <span className="show-on-mobile">👑 + Market</span>
           </button>
         )}
 
@@ -95,7 +96,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={onClaimFaucet}
             title="Claim $500 free test balance"
           >
-            🎁 Claim +$500 Faucet
+            <span className="hide-on-mobile">🎁 Claim +$500 Faucet</span>
+            <span className="show-on-mobile">🎁 +$500</span>
           </button>
         )}
 
