@@ -45,7 +45,7 @@ export const MarketCard: React.FC<MarketCardProps> = ({
       <div className="market-odds-row">
         <div className="odds-badge yes">
           <span className="odds-label">YES</span>
-          <span className="odds-val">{market.yesPrice}¢</span>
+          <span className="odds-val">{market.yesPrice}P</span>
         </div>
 
         <div className="market-volume">
@@ -54,7 +54,7 @@ export const MarketCard: React.FC<MarketCardProps> = ({
 
         <div className="odds-badge no">
           <span className="odds-label">NO</span>
-          <span className="odds-val">{market.noPrice}¢</span>
+          <span className="odds-val">{market.noPrice}P</span>
         </div>
       </div>
     </div>

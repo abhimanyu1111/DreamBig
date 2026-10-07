@@ -1,5 +1,7 @@
 import express, { type Request, type Response } from "express";
 import cors from "cors";
+import rateLimit from "express-rate-limit";
+import { randomUUID } from "crypto";
 import { middleware, adminMiddleware } from "./middlewares/auth";
 import { prisma } from "../../packages/db";
 import {
@@ -8,113 +10,58 @@ import {
   MergeSchema,
   ResolveMarketSchema,
   CreateMarketSchema,
-  type Orderbook,
+  CancelOrderSchema,
 } from "./types";
-import { randomUUID } from "crypto";
+import {
+  TradeError,
+  parseOrderbook,
+  executeOrder,
+  splitPairs,
+  mergePairs,
+  resolveMarketTx,
+  cancelOrderTx,
+  deleteMarketTx,
+  collectOpenOrders,
+} from "./engine";
 
 const app = express();
 
 app.use(express.json());
 app.use(cors());
 
-// ==========================================
-// HELPER FUNCTIONS FOR CLEAN CODE
-// ==========================================
+// Rate limiter for general public/user endpoints
+const generalLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 120, // max 120 requests per minute
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many requests. Please slow down." },
+});
+app.use(generalLimiter);
 
-// Helper: Safely parse orderbook stored as JSON in database
-function parseOrderbook(raw: any): Orderbook {
-  if (!raw) return {};
-  if (typeof raw === "string") {
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return {};
-    }
+// Dedicated faucet rate limiter
+const faucetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // max 5 claims per IP/window
+  message: { message: "Faucet limit reached. Please wait before claiming again." },
+});
+
+// Helper for sending uniform error responses
+function handleTradeError(res: Response, error: unknown, fallbackMessage: string) {
+  if (error instanceof TradeError) {
+    res.status(400).json({ message: error.message });
+    return;
   }
-  return raw as Orderbook;
-}
-
-// Helper: Clean up filled or empty price tiers from orderbook
-function cleanOrderbook(orderbook: Orderbook) {
-  for (const price in orderbook) {
-    const tier = orderbook[price];
-    if (!tier) continue;
-    // Keep only orders that still have unfilled quantity
-    tier.orders = tier.orders.filter((order) => order.qty > order.filledQty);
-    tier.availableQty = tier.orders.reduce(
-      (sum, order) => sum + (order.qty - order.filledQty),
-      0
-    );
-    // Delete price level if no orders remain
-    if (tier.orders.length === 0 || tier.availableQty <= 0) {
-      delete orderbook[price];
-    }
-  }
-}
-
-// Helper: Safely increment or decrement a user's position
-async function updatePosition(
-  tx: any,
-  userId: string,
-  marketId: string,
-  type: "YES" | "NO",
-  changeQty: number
-) {
-  const existing = await tx.position.findUnique({
-    where: {
-      userId_marketId_type: {
-        userId,
-        marketId,
-        type,
-      },
-    },
-  });
-
-  if (existing) {
-    const newQty = existing.qty + changeQty;
-    return await tx.position.update({
-      where: { id: existing.id },
-      data: { qty: Math.max(0, newQty) },
-    });
-  } else {
-    return await tx.position.create({
-      data: {
-        userId,
-        marketId,
-        type,
-        qty: Math.max(0, changeQty),
-      },
-    });
-  }
-}
-
-// Helper: Record an entry in OrderHistory
-async function recordOrderHistory(
-  tx: any,
-  userId: string,
-  marketId: string,
-  orderType: "BUY" | "SELL" | "SPLIT" | "MERGE",
-  positionType: "YES" | "NO",
-  qty: number,
-  price: number
-) {
-  return await tx.orderHistory.create({
-    data: {
-      userId,
-      marketId,
-      orderType,
-      positionType,
-      qty,
-      price,
-    },
-  });
+  console.error("Internal error:", error);
+  const msg = error instanceof Error ? error.message : fallbackMessage;
+  res.status(400).json({ message: msg || fallbackMessage });
 }
 
 // ==========================================
 // 1. PUBLIC ROUTES (MARKETS)
 // ==========================================
 
-// Get all markets with implied YES / NO prices
+// Get all markets with implied YES / NO prices (in paise)
 app.get("/markets", async (req: Request, res: Response) => {
   try {
     const markets = await prisma.market.findMany({
@@ -125,7 +72,6 @@ app.get("/markets", async (req: Request, res: Response) => {
       const yesOrderbook = parseOrderbook(m.yesOrderbook);
       const noOrderbook = parseOrderbook(m.noOrderbook);
 
-      // Best ask prices (cheapest available)
       const yesPrices = Object.keys(yesOrderbook).map(Number).sort((a, b) => a - b);
       const noPrices = Object.keys(noOrderbook).map(Number).sort((a, b) => a - b);
 
@@ -174,14 +120,18 @@ app.get("/markets/:id", async (req: Request, res: Response) => {
   }
 });
 
-// Create a new market (Admin / Dev)
+// Create a new market (Admin only)
 app.post("/market/create", adminMiddleware, async (req: Request, res: Response) => {
-  const { success, data } = CreateMarketSchema.safeParse(req.body);
-  if (!success) {
-    res.status(400).json({ message: "Invalid market input fields" });
+  const parseResult = CreateMarketSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    res.status(400).json({
+      message: "Invalid market input fields",
+      errors: parseResult.error.flatten(),
+    });
     return;
   }
 
+  const { data } = parseResult;
   try {
     const newMarket = await prisma.market.create({
       data: {
@@ -203,9 +153,9 @@ app.post("/market/create", adminMiddleware, async (req: Request, res: Response) 
 
 // ==========================================
 // 2. USER PROFILE & BALANCES
-// ==========================
+// ==========================================
 
-// Get user's USD balance
+// Get user balance (in paise)
 app.get("/balance", middleware, async (req: Request, res: Response) => {
   try {
     const user = await prisma.user.findUnique({
@@ -218,7 +168,7 @@ app.get("/balance", middleware, async (req: Request, res: Response) => {
     }
 
     res.json({
-      usdBalance: user.usdBalance,
+      usdBalance: user.usdBalance, // kept key name for frontend compatibility
       address: user.address,
       isAdmin: Boolean(req.isAdmin),
     });
@@ -228,10 +178,12 @@ app.get("/balance", middleware, async (req: Request, res: Response) => {
   }
 });
 
-// Faucet: Add test USD balance ($500 in cents) for portfolio testing
-app.post("/faucet", middleware, async (req: Request, res: Response) => {
+// Faucet: Add test funds (+₹500.00 = 50,000 paise) with 5-minute cooldown
+app.post("/faucet", middleware, faucetLimiter, async (req: Request, res: Response) => {
   try {
-    const amount = 50000; // $500.00 (in cents)
+    const amount = 50000; // 50,000 paise = ₹500.00
+    const COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes cooldown
+
     const user = await prisma.user.update({
       where: { id: req.userId },
       data: {
@@ -240,7 +192,7 @@ app.post("/faucet", middleware, async (req: Request, res: Response) => {
     });
 
     res.json({
-      message: "Faucet funds added successfully!",
+      message: "Faucet funds (₹500.00) added successfully!",
       usdBalance: user.usdBalance,
     });
   } catch (error) {
@@ -275,6 +227,27 @@ app.get("/position", middleware, async (req: Request, res: Response) => {
   }
 });
 
+// Get user's open resting limit orders across all markets
+app.get("/orders/open", middleware, async (req: Request, res: Response) => {
+  try {
+    const markets = await prisma.market.findMany({
+      where: { resolution: null },
+      select: {
+        id: true,
+        title: true,
+        yesOrderbook: true,
+        noOrderbook: true,
+      },
+    });
+
+    const openOrders = collectOpenOrders(markets, req.userId!);
+    res.json({ orders: openOrders });
+  } catch (error) {
+    console.error("Error fetching open orders:", error);
+    res.status(500).json({ message: "Failed to fetch open orders" });
+  }
+});
+
 // Get user's trade history
 app.get("/history", middleware, async (req: Request, res: Response) => {
   try {
@@ -303,533 +276,157 @@ app.get("/history", middleware, async (req: Request, res: Response) => {
 // 3. CORE TRADING: BUY & SELL MATCHING ENGINE
 // ==========================================
 
+// Execute order (Buy or Sell YES/NO shares)
 app.post("/buy", middleware, async (req: Request, res: Response) => {
-  const { success, data } = CreateOrderSchema.safeParse(req.body);
-  const userId = req.userId!;
-
-  if (!success) {
-    res.status(400).json({ message: "Incorrect order inputs", errors: data });
+  const parseResult = CreateOrderSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    res.status(400).json({
+      message: "Incorrect order inputs",
+      errors: parseResult.error.flatten(),
+    });
     return;
   }
 
-  const originalOrderId = randomUUID();
+  const userId = req.userId!;
+  const orderId = randomUUID();
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      // 1. Lock the market row
-      const marketRows = await tx.$queryRaw<
-        {
-          id: string;
-          yesOrderbook: any;
-          noOrderbook: any;
-          totalQty: number;
-          resolution: string | null;
-        }[]
-      >`
-        SELECT * FROM "Market" WHERE id = ${data.marketId} FOR UPDATE
-      `;
-
-      const market = marketRows[0];
-      if (!market) {
-        throw new Error("Market not found");
-      }
-
-      if (market.resolution) {
-        throw new Error("Market is already resolved and closed for trading");
-      }
-
-      // 2. Lock the user row
-      const userRows = await tx.$queryRaw<
-        { id: string; address: string; usdBalance: number }[]
-      >`
-        SELECT * FROM "User" WHERE id = ${userId} FOR UPDATE
-      `;
-
-      const user = userRows[0];
-      if (!user) {
-        throw new Error("User not found");
-      }
-
-      const yesOrderbook = parseOrderbook(market.yesOrderbook);
-      const noOrderbook = parseOrderbook(market.noOrderbook);
-
-      let leftQty = data.qty;
-
-      // ========================================
-      // CASE 1: USER WANTS TO BUY "YES"
-      // ========================================
-      if (data.side === "yes" && data.type === "buy") {
-        const maxTotalCost = data.qty * data.price;
-        if (user.usdBalance < maxTotalCost) {
-          throw new Error("Insufficient USD balance to place this buy order");
-        }
-
-        // Lock total buy budget upfront
-        await tx.user.update({
-          where: { id: userId },
-          data: { usdBalance: { decrement: maxTotalCost } },
-        });
-
-        // Match against YES orderbook sorted by lowest asking price first
-        const prices = Object.keys(yesOrderbook)
-          .map(Number)
-          .sort((a, b) => a - b);
-
-        for (const price of prices) {
-          if (price > data.price || leftQty <= 0) break;
-
-          const tier = yesOrderbook[price];
-          if (!tier) continue;
-
-          for (const order of tier.orders) {
-            const availableInOrder = order.qty - order.filledQty;
-            if (availableInOrder <= 0 || leftQty <= 0) continue;
-
-            const matchedQty = Math.min(availableInOrder, leftQty);
-
-            if (!order.reverseOrder) {
-              // Regular YES seller
-              await updatePosition(tx, order.userId, data.marketId, "YES", -matchedQty);
-              await tx.user.update({
-                where: { id: order.userId },
-                data: { usdBalance: { increment: price * matchedQty } },
-              });
-              await updatePosition(tx, userId, data.marketId, "YES", matchedQty);
-            } else {
-              // Counter-buyer who ordered NO at (100 - price)
-              await updatePosition(tx, order.userId, data.marketId, "NO", matchedQty);
-              await updatePosition(tx, userId, data.marketId, "YES", matchedQty);
-              await tx.market.update({
-                where: { id: data.marketId },
-                data: { totalQty: { increment: matchedQty } },
-              });
-            }
-
-            // Refund price improvement if matched below limit price
-            const priceImprovement = (data.price - price) * matchedQty;
-            if (priceImprovement > 0) {
-              await tx.user.update({
-                where: { id: userId },
-                data: { usdBalance: { increment: priceImprovement } },
-              });
-            }
-
-            // Record execution history
-            await recordOrderHistory(tx, userId, data.marketId, "BUY", "YES", matchedQty, price);
-            await recordOrderHistory(
-              tx,
-              order.userId,
-              data.marketId,
-              order.reverseOrder ? "BUY" : "SELL",
-              order.reverseOrder ? "NO" : "YES",
-              matchedQty,
-              order.reverseOrder ? 100 - price : price
-            );
-
-            order.filledQty += matchedQty;
-            tier.availableQty -= matchedQty;
-            leftQty -= matchedQty;
-          }
-        }
-
-        // If unfilled quantity remains, place resting counter-order in NO orderbook at (100 - price)
-        if (leftQty > 0) {
-          const oppositePrice = 100 - data.price;
-          if (!noOrderbook[oppositePrice]) {
-            noOrderbook[oppositePrice] = { availableQty: 0, orders: [] };
-          }
-          noOrderbook[oppositePrice]!.availableQty += leftQty;
-          noOrderbook[oppositePrice]!.orders.push({
-            qty: leftQty,
-            filledQty: 0,
-            userId,
-            originalOrderId,
-            reverseOrder: true,
-          });
-        }
-      }
-
-      // ========================================
-      // CASE 2: USER WANTS TO BUY "NO"
-      // ========================================
-      else if (data.side === "no" && data.type === "buy") {
-        const maxTotalCost = data.qty * data.price;
-        if (user.usdBalance < maxTotalCost) {
-          throw new Error("Insufficient USD balance to place this buy order");
-        }
-
-        // Lock total buy budget upfront
-        await tx.user.update({
-          where: { id: userId },
-          data: { usdBalance: { decrement: maxTotalCost } },
-        });
-
-        // Match against NO orderbook sorted by lowest asking price first
-        const prices = Object.keys(noOrderbook)
-          .map(Number)
-          .sort((a, b) => a - b);
-
-        for (const price of prices) {
-          if (price > data.price || leftQty <= 0) break;
-
-          const tier = noOrderbook[price];
-          if (!tier) continue;
-
-          for (const order of tier.orders) {
-            const availableInOrder = order.qty - order.filledQty;
-            if (availableInOrder <= 0 || leftQty <= 0) continue;
-
-            const matchedQty = Math.min(availableInOrder, leftQty);
-
-            if (!order.reverseOrder) {
-              // Regular NO seller
-              await updatePosition(tx, order.userId, data.marketId, "NO", -matchedQty);
-              await tx.user.update({
-                where: { id: order.userId },
-                data: { usdBalance: { increment: price * matchedQty } },
-              });
-              await updatePosition(tx, userId, data.marketId, "NO", matchedQty);
-            } else {
-              // Counter-buyer who ordered YES at (100 - price)
-              await updatePosition(tx, order.userId, data.marketId, "YES", matchedQty);
-              await updatePosition(tx, userId, data.marketId, "NO", matchedQty);
-              await tx.market.update({
-                where: { id: data.marketId },
-                data: { totalQty: { increment: matchedQty } },
-              });
-            }
-
-            // Refund price improvement
-            const priceImprovement = (data.price - price) * matchedQty;
-            if (priceImprovement > 0) {
-              await tx.user.update({
-                where: { id: userId },
-                data: { usdBalance: { increment: priceImprovement } },
-              });
-            }
-
-            // Record execution history
-            await recordOrderHistory(tx, userId, data.marketId, "BUY", "NO", matchedQty, price);
-            await recordOrderHistory(
-              tx,
-              order.userId,
-              data.marketId,
-              order.reverseOrder ? "BUY" : "SELL",
-              order.reverseOrder ? "YES" : "NO",
-              matchedQty,
-              order.reverseOrder ? 100 - price : price
-            );
-
-            order.filledQty += matchedQty;
-            tier.availableQty -= matchedQty;
-            leftQty -= matchedQty;
-          }
-        }
-
-        // If unfilled quantity remains, place resting counter-order in YES orderbook at (100 - price)
-        if (leftQty > 0) {
-          const oppositePrice = 100 - data.price;
-          if (!yesOrderbook[oppositePrice]) {
-            yesOrderbook[oppositePrice] = { availableQty: 0, orders: [] };
-          }
-          yesOrderbook[oppositePrice]!.availableQty += leftQty;
-          yesOrderbook[oppositePrice]!.orders.push({
-            qty: leftQty,
-            filledQty: 0,
-            userId,
-            originalOrderId,
-            reverseOrder: true,
-          });
-        }
-      }
-
-      // ========================================
-      // CASE 3: USER WANTS TO SELL "YES"
-      // ========================================
-      else if (data.side === "yes" && data.type === "sell") {
-        const userPosition = await tx.position.findUnique({
-          where: {
-            userId_marketId_type: {
-              userId,
-              marketId: data.marketId,
-              type: "YES",
-            },
-          },
-        });
-
-        if (!userPosition || userPosition.qty < data.qty) {
-          throw new Error("Insufficient YES shares to sell");
-        }
-
-        // Lock YES shares upfront
-        await updatePosition(tx, userId, data.marketId, "YES", -data.qty);
-
-        // A YES seller matches against YES buyers waiting in noOrderbook as reverseOrder: true
-        // where (100 - priceKey) >= data.price
-        const noPrices = Object.keys(noOrderbook)
-          .map(Number)
-          .sort((a, b) => a - b); // Lower noPrice means higher yesPrice (100 - noPrice)
-
-        for (const price of noPrices) {
-          const buyerYesPrice = 100 - price;
-          if (buyerYesPrice < data.price || leftQty <= 0) continue;
-
-          const tier = noOrderbook[price];
-          if (!tier) continue;
-
-          for (const order of tier.orders) {
-            if (!order.reverseOrder) continue; // Only match buyers
-
-            const availableInOrder = order.qty - order.filledQty;
-            if (availableInOrder <= 0 || leftQty <= 0) continue;
-
-            const matchedQty = Math.min(availableInOrder, leftQty);
-
-            // Buyer receives the YES shares
-            await updatePosition(tx, order.userId, data.marketId, "YES", matchedQty);
-
-            // Seller receives USD at buyer's price
-            await tx.user.update({
-              where: { id: userId },
-              data: { usdBalance: { increment: buyerYesPrice * matchedQty } },
-            });
-
-            await recordOrderHistory(tx, userId, data.marketId, "SELL", "YES", matchedQty, buyerYesPrice);
-
-            order.filledQty += matchedQty;
-            tier.availableQty -= matchedQty;
-            leftQty -= matchedQty;
-          }
-        }
-
-        // If unfilled quantity remains, place resting sell order in YES orderbook
-        if (leftQty > 0) {
-          if (!yesOrderbook[data.price]) {
-            yesOrderbook[data.price] = { availableQty: 0, orders: [] };
-          }
-          yesOrderbook[data.price]!.availableQty += leftQty;
-          yesOrderbook[data.price]!.orders.push({
-            qty: leftQty,
-            filledQty: 0,
-            userId,
-            originalOrderId,
-            reverseOrder: false,
-          });
-        }
-      }
-
-      // ========================================
-      // CASE 4: USER WANTS TO SELL "NO"
-      // ========================================
-      else if (data.side === "no" && data.type === "sell") {
-        const userPosition = await tx.position.findUnique({
-          where: {
-            userId_marketId_type: {
-              userId,
-              marketId: data.marketId,
-              type: "NO",
-            },
-          },
-        });
-
-        if (!userPosition || userPosition.qty < data.qty) {
-          throw new Error("Insufficient NO shares to sell");
-        }
-
-        // Lock NO shares upfront
-        await updatePosition(tx, userId, data.marketId, "NO", -data.qty);
-
-        // A NO seller matches against NO buyers waiting in yesOrderbook as reverseOrder: true
-        const yesPrices = Object.keys(yesOrderbook)
-          .map(Number)
-          .sort((a, b) => a - b);
-
-        for (const price of yesPrices) {
-          const buyerNoPrice = 100 - price;
-          if (buyerNoPrice < data.price || leftQty <= 0) continue;
-
-          const tier = yesOrderbook[price];
-          if (!tier) continue;
-
-          for (const order of tier.orders) {
-            if (!order.reverseOrder) continue;
-
-            const availableInOrder = order.qty - order.filledQty;
-            if (availableInOrder <= 0 || leftQty <= 0) continue;
-
-            const matchedQty = Math.min(availableInOrder, leftQty);
-
-            // Buyer receives NO shares
-            await updatePosition(tx, order.userId, data.marketId, "NO", matchedQty);
-
-            // Seller receives USD
-            await tx.user.update({
-              where: { id: userId },
-              data: { usdBalance: { increment: buyerNoPrice * matchedQty } },
-            });
-
-            await recordOrderHistory(tx, userId, data.marketId, "SELL", "NO", matchedQty, buyerNoPrice);
-
-            order.filledQty += matchedQty;
-            tier.availableQty -= matchedQty;
-            leftQty -= matchedQty;
-          }
-        }
-
-        // If unfilled quantity remains, place resting sell order in NO orderbook
-        if (leftQty > 0) {
-          if (!noOrderbook[data.price]) {
-            noOrderbook[data.price] = { availableQty: 0, orders: [] };
-          }
-          noOrderbook[data.price]!.availableQty += leftQty;
-          noOrderbook[data.price]!.orders.push({
-            qty: leftQty,
-            filledQty: 0,
-            userId,
-            originalOrderId,
-            reverseOrder: false,
-          });
-        }
-      }
-
-      // Clean empty price tiers and save updated orderbooks
-      cleanOrderbook(yesOrderbook);
-      cleanOrderbook(noOrderbook);
-
-      await tx.market.update({
-        where: { id: data.marketId },
-        data: {
-          yesOrderbook: yesOrderbook,
-          noOrderbook: noOrderbook,
-        },
-      });
-
-      return {
-        filledQty: data.qty - leftQty,
-        remainingQty: leftQty,
-      };
-    });
+    const result = await prisma.$transaction(
+      async (tx) => {
+        return await executeOrder(tx, userId, parseResult.data, orderId);
+      },
+      { timeout: 10000 }
+    );
 
     res.json({
       message: "Order processed successfully",
       data: result,
     });
-  } catch (error: any) {
-    console.error("Order error:", error.message || error);
-    res.status(400).json({ message: error.message || "Order execution failed" });
+  } catch (error) {
+    handleTradeError(res, error, "Order execution failed");
   }
 });
 
-// Also accept /sell as an alias route forwarding to the same matching logic
+// Direct alias for SELL (for programmatic API clients)
 app.post("/sell", middleware, async (req: Request, res: Response) => {
   req.body.type = "sell";
-  // Delegate to /buy handler logic
-  const { success } = CreateOrderSchema.safeParse(req.body);
-  if (!success) {
-    res.status(400).json({ message: "Invalid sell order inputs" });
+  const parseResult = CreateOrderSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    res.status(400).json({
+      message: "Invalid sell order inputs",
+      errors: parseResult.error.flatten(),
+    });
     return;
   }
-  // Reuse endpoint handler directly
-  (app._router.handle as any)({ ...req, url: "/buy", method: "POST" }, res);
+
+  const userId = req.userId!;
+  const orderId = randomUUID();
+
+  try {
+    const result = await prisma.$transaction(
+      async (tx) => {
+        return await executeOrder(tx, userId, parseResult.data, orderId);
+      },
+      { timeout: 10000 }
+    );
+
+    res.json({
+      message: "Sell order processed successfully",
+      data: result,
+    });
+  } catch (error) {
+    handleTradeError(res, error, "Sell order execution failed");
+  }
+});
+
+// Cancel an open resting limit order
+app.post("/order/cancel", middleware, async (req: Request, res: Response) => {
+  const parseResult = CancelOrderSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    res.status(400).json({
+      message: "Invalid cancel order inputs",
+      errors: parseResult.error.flatten(),
+    });
+    return;
+  }
+
+  const { marketId, orderId } = parseResult.data;
+  const userId = req.userId!;
+
+  try {
+    const result = await prisma.$transaction(
+      async (tx) => {
+        return await cancelOrderTx(tx, userId, marketId, orderId);
+      },
+      { timeout: 10000 }
+    );
+
+    res.json({
+      message: `Order cancelled successfully (${result.cancelledQty} shares returned/refunded)`,
+      data: result,
+    });
+  } catch (error) {
+    handleTradeError(res, error, "Order cancellation failed");
+  }
 });
 
 // ==========================================
-// 4. SPLIT & MERGE CONTRACT OPERATIONS (Mint 1 YES + 1 NO for $1.00 USD)
+// 4. SPLIT & MERGE CONTRACT OPERATIONS (1 YES + 1 NO = ₹1.00)
 // ==========================================
 
-// Split: Pay $1.00 (100 cents) per share to mint 1 YES + 1 NO share
+// Split: Pay ₹1.00 (100 paise) per share to mint 1 YES + 1 NO share
 app.post("/split", middleware, async (req: Request, res: Response) => {
-  const { success, data } = SplitSchema.safeParse(req.body);
-  const userId = req.userId!;
-
-  if (!success) {
-    res.status(400).json({ message: "Invalid inputs for split" });
+  const parseResult = SplitSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    res.status(400).json({
+      message: "Invalid inputs for split",
+      errors: parseResult.error.flatten(),
+    });
     return;
   }
 
-  const cost = data.qty * 100; // 100 cents per share pair
+  const { marketId, qty } = parseResult.data;
+  const userId = req.userId!;
 
   try {
-    await prisma.$transaction(async (tx) => {
-      const user = await tx.user.findUnique({ where: { id: userId } });
-      if (!user || user.usdBalance < cost) {
-        throw new Error("Insufficient USD balance to split");
-      }
+    await prisma.$transaction(
+      async (tx) => {
+        await splitPairs(tx, userId, marketId, qty);
+      },
+      { timeout: 10000 }
+    );
 
-      // Deduct USD balance
-      await tx.user.update({
-        where: { id: userId },
-        data: { usdBalance: { decrement: cost } },
-      });
-
-      // Add YES and NO positions
-      await updatePosition(tx, userId, data.marketId, "YES", data.qty);
-      await updatePosition(tx, userId, data.marketId, "NO", data.qty);
-
-      // Increase market totalQty
-      await tx.market.update({
-        where: { id: data.marketId },
-        data: { totalQty: { increment: data.qty } },
-      });
-
-      // Record in history
-      await recordOrderHistory(tx, userId, data.marketId, "SPLIT", "YES", data.qty, 50);
-    });
-
-    res.json({ message: `Successfully split ${data.qty} shares into YES and NO!` });
-  } catch (error: any) {
-    res.status(400).json({ message: error.message || "Split operation failed" });
+    res.json({ message: `Successfully split ₹${qty}.00 into ${qty} YES and ${qty} NO shares!` });
+  } catch (error) {
+    handleTradeError(res, error, "Split operation failed");
   }
 });
 
-// Merge: Burn 1 YES + 1 NO share to redeem $1.00 (100 cents)
+// Merge: Burn 1 YES + 1 NO share to redeem ₹1.00 (100 paise)
 app.post("/merge", middleware, async (req: Request, res: Response) => {
-  const { success, data } = MergeSchema.safeParse(req.body);
-  const userId = req.userId!;
-
-  if (!success) {
-    res.status(400).json({ message: "Invalid inputs for merge" });
+  const parseResult = MergeSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    res.status(400).json({
+      message: "Invalid inputs for merge",
+      errors: parseResult.error.flatten(),
+    });
     return;
   }
 
-  const redeemAmount = data.qty * 100; // 100 cents per share pair
+  const { marketId, qty } = parseResult.data;
+  const userId = req.userId!;
 
   try {
-    await prisma.$transaction(async (tx) => {
-      const yesPos = await tx.position.findUnique({
-        where: { userId_marketId_type: { userId, marketId: data.marketId, type: "YES" } },
-      });
-      const noPos = await tx.position.findUnique({
-        where: { userId_marketId_type: { userId, marketId: data.marketId, type: "NO" } },
-      });
+    await prisma.$transaction(
+      async (tx) => {
+        await mergePairs(tx, userId, marketId, qty);
+      },
+      { timeout: 10000 }
+    );
 
-      if (!yesPos || yesPos.qty < data.qty || !noPos || noPos.qty < data.qty) {
-        throw new Error("You must own at least " + data.qty + " YES and " + data.qty + " NO shares to merge");
-      }
-
-      // Decrement YES and NO positions
-      await updatePosition(tx, userId, data.marketId, "YES", -data.qty);
-      await updatePosition(tx, userId, data.marketId, "NO", -data.qty);
-
-      // Increment USD balance
-      await tx.user.update({
-        where: { id: userId },
-        data: { usdBalance: { increment: redeemAmount } },
-      });
-
-      // Decrement market totalQty
-      await tx.market.update({
-        where: { id: data.marketId },
-        data: { totalQty: { decrement: data.qty } },
-      });
-
-      // Record in history
-      await recordOrderHistory(tx, userId, data.marketId, "MERGE", "YES", data.qty, 50);
-    });
-
-    res.json({ message: `Successfully merged ${data.qty} pairs into $${(redeemAmount / 100).toFixed(2)} USD!` });
-  } catch (error: any) {
-    res.status(400).json({ message: error.message || "Merge operation failed" });
+    res.json({ message: `Successfully merged ${qty} pairs into ₹${qty}.00 cash!` });
+  } catch (error) {
+    handleTradeError(res, error, "Merge operation failed");
   }
 });
 
@@ -837,200 +434,54 @@ app.post("/merge", middleware, async (req: Request, res: Response) => {
 // 5. MARKET RESOLUTION & PAYOUTS
 // ==========================================
 
-// Resolve a market and distribute winning payouts ($1.00 per share) to holders
+// Resolve a market and distribute winning payouts (₹1.00 / 100P per share)
 app.post("/market/resolve", adminMiddleware, async (req: Request, res: Response) => {
-  const { success, data } = ResolveMarketSchema.safeParse(req.body);
-
-  if (!success) {
-    res.status(400).json({ message: "Invalid resolution input" });
+  const parseResult = ResolveMarketSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    res.status(400).json({
+      message: "Invalid resolution input",
+      errors: parseResult.error.flatten(),
+    });
     return;
   }
 
+  const { marketId, resolution } = parseResult.data;
+
   try {
-    await prisma.$transaction(async (tx) => {
-      const market = await tx.market.findUnique({
-        where: { id: data.marketId },
-      });
+    await prisma.$transaction(
+      async (tx) => {
+        await resolveMarketTx(tx, marketId, resolution);
+      },
+      { timeout: 15000 }
+    );
 
-      if (!market) {
-        throw new Error("Market not found");
-      }
-
-      if (market.resolution) {
-        throw new Error("Market is already resolved");
-      }
-
-      const yesOrderbook = parseOrderbook(market.yesOrderbook);
-      const noOrderbook = parseOrderbook(market.noOrderbook);
-
-      // 1. Refund all resting unfilled orders from both orderbooks before settling
-      // YES Orderbook:
-      for (const priceKey of Object.keys(yesOrderbook)) {
-        const price = Number(priceKey);
-        const tier = yesOrderbook[price];
-        if (!tier) continue;
-
-        for (const order of tier.orders) {
-          const unfilledQty = order.qty - order.filledQty;
-          if (unfilledQty <= 0) continue;
-
-          if (order.reverseOrder) {
-            // Resting BUY NO order placed at (100 - price) cents: refund locked cash
-            const refundAmount = unfilledQty * (100 - price);
-            await tx.user.update({
-              where: { id: order.userId },
-              data: { usdBalance: { increment: refundAmount } },
-            });
-          } else {
-            // Resting SELL YES order: return unsold YES shares to user position
-            await updatePosition(tx, order.userId, data.marketId, "YES", unfilledQty);
-          }
-        }
-      }
-
-      // NO Orderbook:
-      for (const priceKey of Object.keys(noOrderbook)) {
-        const price = Number(priceKey);
-        const tier = noOrderbook[price];
-        if (!tier) continue;
-
-        for (const order of tier.orders) {
-          const unfilledQty = order.qty - order.filledQty;
-          if (unfilledQty <= 0) continue;
-
-          if (order.reverseOrder) {
-            // Resting BUY YES order placed at (100 - price) cents: refund locked cash
-            const refundAmount = unfilledQty * (100 - price);
-            await tx.user.update({
-              where: { id: order.userId },
-              data: { usdBalance: { increment: refundAmount } },
-            });
-          } else {
-            // Resting SELL NO order: return unsold NO shares to user position
-            await updatePosition(tx, order.userId, data.marketId, "NO", unfilledQty);
-          }
-        }
-      }
-
-      // 2. Pay out all positions (including any returned unsold shares from resting orders)
-      const positions = await tx.position.findMany({
-        where: { marketId: data.marketId, qty: { gt: 0 } },
-      });
-
-      for (const pos of positions) {
-        if (pos.type === data.resolution) {
-          // Winner gets 100 cents ($1.00) per share
-          const payout = pos.qty * 100;
-          await tx.user.update({
-            where: { id: pos.userId },
-            data: { usdBalance: { increment: payout } },
-          });
-        }
-
-        // Reset position to 0 since market is resolved
-        await tx.position.update({
-          where: { id: pos.id },
-          data: { qty: 0 },
-        });
-      }
-
-      // 3. Mark market as resolved and clear open orderbooks
-      await tx.market.update({
-        where: { id: data.marketId },
-        data: {
-          resolution: data.resolution,
-          yesOrderbook: {},
-          noOrderbook: {},
-        },
-      });
+    res.json({
+      message: `Market resolved to ${resolution}. Winning shares paid out at ₹1.00 (100P)!`,
     });
-
-    res.json({ message: `Market resolved to ${data.resolution}. Winning shares paid out at $1.00!` });
-  } catch (error: any) {
-    res.status(400).json({ message: error.message || "Failed to resolve market" });
+  } catch (error) {
+    handleTradeError(res, error, "Failed to resolve market");
   }
 });
 
-// 13. Delete Market (Admin only)
+// Delete Market (Admin only) - refunds all resting liquidity and outstanding share values
 app.delete("/market/:id", adminMiddleware, async (req: Request, res: Response) => {
   const marketId = req.params.id;
-
   if (!marketId) {
     res.status(400).json({ message: "Market ID is required" });
     return;
   }
 
   try {
-    await prisma.$transaction(async (tx) => {
-      const market = await tx.market.findUnique({
-        where: { id: marketId },
-      });
+    await prisma.$transaction(
+      async (tx) => {
+        await deleteMarketTx(tx, marketId);
+      },
+      { timeout: 15000 }
+    );
 
-      if (!market) {
-        throw new Error("Market not found");
-      }
-
-      // If the market had any unfilled resting orders, refund locked cash before deletion
-      const yesOrderbook = parseOrderbook(market.yesOrderbook);
-      const noOrderbook = parseOrderbook(market.noOrderbook);
-
-      for (const priceKey of Object.keys(yesOrderbook)) {
-        const price = Number(priceKey);
-        const tier = yesOrderbook[price];
-        if (!tier) continue;
-
-        for (const order of tier.orders) {
-          const unfilledQty = order.qty - order.filledQty;
-          if (unfilledQty <= 0) continue;
-
-          if (order.reverseOrder) {
-            const refundAmount = unfilledQty * (100 - price);
-            await tx.user.update({
-              where: { id: order.userId },
-              data: { usdBalance: { increment: refundAmount } },
-            });
-          }
-        }
-      }
-
-      for (const priceKey of Object.keys(noOrderbook)) {
-        const price = Number(priceKey);
-        const tier = noOrderbook[price];
-        if (!tier) continue;
-
-        for (const order of tier.orders) {
-          const unfilledQty = order.qty - order.filledQty;
-          if (unfilledQty <= 0) continue;
-
-          if (order.reverseOrder) {
-            const refundAmount = unfilledQty * (100 - price);
-            await tx.user.update({
-              where: { id: order.userId },
-              data: { usdBalance: { increment: refundAmount } },
-            });
-          }
-        }
-      }
-
-      // Delete associated positions and trade history in this market
-      await tx.position.deleteMany({
-        where: { marketId },
-      });
-
-      await tx.orderHistory.deleteMany({
-        where: { marketId },
-      });
-
-      // Delete the market itself
-      await tx.market.delete({
-        where: { id: marketId },
-      });
-    });
-
-    res.json({ message: "Market deleted successfully" });
-  } catch (error: any) {
-    console.error("Delete market error:", error);
-    res.status(400).json({ message: error.message || "Failed to delete market" });
+    res.json({ message: "Market deleted successfully with liquidity safely refunded" });
+  } catch (error) {
+    handleTradeError(res, error, "Failed to delete market");
   }
 });
 

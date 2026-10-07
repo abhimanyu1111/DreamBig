@@ -44,7 +44,7 @@ export const OrderbookView: React.FC<OrderbookViewProps> = ({
 
                 return (
                   <div key={`yes-${price}`} className="order-row yes-row">
-                    <span className="order-price">{price}¢</span>
+                    <span className="order-price">{price}P</span>
                     <span className="order-qty">
                       {tier.availableQty}
                       {hasCounter && <span className="counter-tag">🔄</span>}
@@ -74,7 +74,7 @@ export const OrderbookView: React.FC<OrderbookViewProps> = ({
 
                 return (
                   <div key={`no-${price}`} className="order-row no-row">
-                    <span className="order-price">{price}¢</span>
+                    <span className="order-price">{price}P</span>
                     <span className="order-qty">
                       {tier.availableQty}
                       {hasCounter && <span className="counter-tag">🔄</span>}

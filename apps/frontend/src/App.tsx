@@ -156,9 +156,9 @@ function App() {
     try {
       const newBalance = await claimFaucet();
       setUsdBalance(newBalance);
-      alert("🎉 Added +$500.00 USD test balance to your wallet!");
+      alert("🎉 Added +₹500.00 test balance to your wallet!");
     } catch (err: any) {
-      alert(err.message || "Failed to claim faucet");
+      alert(err?.response?.data?.message || err.message || "Failed to claim faucet");
     }
   };
 

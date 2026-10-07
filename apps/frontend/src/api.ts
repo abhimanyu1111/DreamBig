@@ -35,7 +35,7 @@ export async function createMarket(title: string, description: string, resolutio
   return res.data;
 }
 
-// 4. Fetch user USD balance (Requires login)
+// 4. Fetch user balance in paise (Requires login)
 export async function fetchBalance(): Promise<{ usdBalance: number; address: string; isAdmin: boolean }> {
   const token = await getAuthHeader();
   if (!token) {
@@ -54,7 +54,7 @@ export async function fetchBalance(): Promise<{ usdBalance: number; address: str
   }
 }
 
-// 5. Add $500 test funds (Faucet - Requires login)
+// 5. Add ₹500 test funds (Faucet - Requires login)
 export async function claimFaucet(): Promise<number> {
   const token = await getAuthHeader();
   if (!token) throw new Error("Please connect your Solana wallet first to claim faucet funds.");
@@ -116,7 +116,7 @@ export async function placeOrder(params: {
   return res.data;
 }
 
-// 9. Split USD into YES + NO shares (Requires login)
+// 9. Split ₹1 into 1 YES + 1 NO share per pair (Requires login)
 export async function splitContract(marketId: string, qty: number) {
   const token = await getAuthHeader();
   if (!token) throw new Error("Please connect your Solana wallet first to split contracts.");
@@ -129,7 +129,7 @@ export async function splitContract(marketId: string, qty: number) {
   return res.data;
 }
 
-// 10. Merge YES + NO shares into USD (Requires login)
+// 10. Merge YES + NO shares back into ₹1 per pair (Requires login)
 export async function mergeContract(marketId: string, qty: number) {
   const token = await getAuthHeader();
   if (!token) throw new Error("Please connect your Solana wallet first to merge contracts.");
@@ -163,5 +163,18 @@ export async function deleteMarket(marketId: string) {
   const res = await axios.delete(`${API_BASE}/market/${marketId}`, {
     headers: { authorization: token },
   });
+  return res.data;
+}
+
+// 13. Cancel resting limit order (Requires login)
+export async function cancelOrder(marketId: string, orderId: string) {
+  const token = await getAuthHeader();
+  if (!token) throw new Error("Please connect your Solana wallet first.");
+
+  const res = await axios.post(
+    `${API_BASE}/order/cancel`,
+    { marketId, orderId },
+    { headers: { authorization: token } }
+  );
   return res.data;
 }

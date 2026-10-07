@@ -7,8 +7,8 @@ export interface Market {
   resolutionDescription: string;
   totalQty: number;
   resolution: "YES" | "NO" | null;
-  yesPrice: number; // In cents (e.g. 60 = $0.60)
-  noPrice: number;  // In cents (e.g. 40 = $0.40)
+  yesPrice: number; // In paise (e.g. 60 = ₹0.60)
+  noPrice: number;  // In paise (e.g. 40 = ₹0.40)
   yesOrderbook?: Orderbook;
   noOrderbook?: Orderbook;
 }

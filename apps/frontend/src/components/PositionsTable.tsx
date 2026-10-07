@@ -1,5 +1,6 @@
 import React from "react";
 import type { UserPosition } from "../types";
+import { formatRupees, PAYOUT_PAISE } from "../currency";
 
 interface PositionsTableProps {
   positions: UserPosition[];
@@ -49,7 +50,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
             </thead>
             <tbody>
               {positions.map((pos) => {
-                const maxPayout = (pos.qty * 1.0).toFixed(2);
+                const maxPayout = formatRupees(pos.qty * PAYOUT_PAISE);
                 return (
                   <tr key={pos.id}>
                     <td className="market-col-name">{pos.market.title}</td>
@@ -59,7 +60,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
                       </span>
                     </td>
                     <td className="qty-col">{pos.qty.toLocaleString()} shares</td>
-                    <td className="payout-col">${maxPayout}</td>
+                    <td className="payout-col">{maxPayout}</td>
                     <td>
                       <button
                         className="btn-table-action"

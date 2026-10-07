@@ -1,5 +1,6 @@
 import React from "react";
 import type { OrderHistoryItem } from "../types";
+import { formatRupees } from "../currency";
 
 interface OrderHistoryTableProps {
   history: OrderHistoryItem[];
@@ -48,7 +49,7 @@ export const OrderHistoryTable: React.FC<OrderHistoryTableProps> = ({
             </thead>
             <tbody>
               {history.map((item) => {
-                const total = ((item.price * item.qty) / 100).toFixed(2);
+                const total = formatRupees(item.price * item.qty);
                 return (
                   <tr key={item.id}>
                     <td>
@@ -62,8 +63,8 @@ export const OrderHistoryTable: React.FC<OrderHistoryTableProps> = ({
                       </span>
                     </td>
                     <td className="qty-col">{item.qty} shares</td>
-                    <td className="price-col">{item.price}¢</td>
-                    <td className="total-col">${total}</td>
+                    <td className="price-col">{item.price}P</td>
+                    <td className="total-col">{total}</td>
                     <td className="market-col-name">
                       {item.market ? item.market.title : item.marketId}
                     </td>

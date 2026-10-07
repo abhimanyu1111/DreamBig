@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import type { Market } from "../types";
 import { placeOrder, splitContract, mergeContract, resolveMarket } from "../api";
+import { formatRupees, formatPaise, PAYOUT_PAISE } from "../currency";
 
 interface TradingPanelProps {
   market: Market;
@@ -42,9 +43,9 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
   }, [market.id]);
 
   // Cost and payout calculation
-  const totalCost = ((price * qty) / 100).toFixed(2);
-  const maxPayout = ((100 * qty) / 100).toFixed(2);
-  const potentialProfit = (((100 - price) * qty) / 100).toFixed(2);
+  const totalCost = formatRupees(price * qty);
+  const maxPayout = formatRupees(PAYOUT_PAISE * qty);
+  const potentialProfit = formatRupees((PAYOUT_PAISE - price) * qty);
 
   // Handle Trade Execution
   const handleExecuteTrade = async (e: React.FormEvent) => {
@@ -232,7 +233,7 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
                   }}
                 >
                   <span className="outcome-name">YES</span>
-                  <span className="outcome-price">{market.yesPrice}¢</span>
+                  <span className="outcome-price">{formatPaise(market.yesPrice)}</span>
                 </button>
 
                 <button
@@ -244,7 +245,7 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
                   }}
                 >
                   <span className="outcome-name">NO</span>
-                  <span className="outcome-price">{market.noPrice}¢</span>
+                  <span className="outcome-price">{formatPaise(market.noPrice)}</span>
                 </button>
               </div>
 
@@ -252,7 +253,7 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
               <div className="form-group">
                 <div className="form-label-row">
                   <label>Limit Price</label>
-                  <span className="label-sub">{price}¢ (${(price / 100).toFixed(2)})</span>
+                  <span className="label-sub">{formatPaise(price)} ({formatRupees(price)})</span>
                 </div>
                 <div className="slider-input-row">
                   <input
@@ -271,7 +272,7 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
                     onChange={(e) => setPrice(Number(e.target.value))}
                     className="number-input-small"
                   />
-                  <span className="unit-label">¢</span>
+                  <span className="unit-label">P</span>
                 </div>
               </div>
 
@@ -279,7 +280,7 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
               <div className="form-group">
                 <div className="form-label-row">
                   <label>Shares Quantity</label>
-                  <span className="label-sub">1 share = $1.00 if correct</span>
+                  <span className="label-sub">1 share = ₹1.00 if correct</span>
                 </div>
                 <input
                   type="number"
@@ -294,18 +295,18 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
               <div className="trade-summary">
                 <div className="summary-row">
                   <span>{type === "buy" ? "Total Investment" : "Est. Proceeds"}</span>
-                  <strong className="summary-val">${totalCost}</strong>
+                  <strong className="summary-val">{totalCost}</strong>
                 </div>
 
                 {type === "buy" && (
                   <>
                     <div className="summary-row">
                       <span>Potential Payout</span>
-                      <strong className="summary-green">${maxPayout}</strong>
+                      <strong className="summary-green">{maxPayout}</strong>
                     </div>
                     <div className="summary-row">
                       <span>Potential Profit</span>
-                      <span className="profit-badge">+${potentialProfit}</span>
+                      <span className="profit-badge">+{potentialProfit}</span>
                     </div>
                   </>
                 )}
@@ -319,7 +320,7 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
               >
                 {loading
                   ? "Processing Order..."
-                  : `${type.toUpperCase()} ${side.toUpperCase()} @ ${price}¢`}
+                  : `${type.toUpperCase()} ${side.toUpperCase()} @ ${formatPaise(price)}`}
               </button>
             </form>
           )}
@@ -332,7 +333,7 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
       {activeTab === "mint" && (
         <div className="mint-container">
           <p className="mint-explainer">
-            In prediction markets, <strong>1 YES + 1 NO = $1.00 USD</strong>.
+            In prediction markets, <strong>1 YES + 1 NO = ₹1.00</strong>.
             You can split cash into both shares, or merge pairs back to cash anytime.
           </p>
 
@@ -364,7 +365,7 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
                   disabled={loading || isResolved}
                   className="btn-split"
                 >
-                  📥 Split ${contractQty}.00 → {contractQty} YES + {contractQty} NO
+                  📥 Split {formatRupees(contractQty * PAYOUT_PAISE)} → {contractQty} YES + {contractQty} NO
                 </button>
 
                 <button
@@ -372,7 +373,7 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
                   disabled={loading}
                   className="btn-merge"
                 >
-                  📤 Merge {contractQty} YES & NO → ${contractQty}.00 Cash
+                  📤 Merge {contractQty} YES & NO → {formatRupees(contractQty * PAYOUT_PAISE)} Cash
                 </button>
               </div>
             </>
@@ -387,7 +388,7 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
         <div className="settle-container">
           <h4>👑 Market Resolution (Admin Panel)</h4>
           <p className="settle-desc">
-            Resolving pays out <strong>$1.00 (100¢)</strong> for every winning share directly to holders' balances.
+            Resolving pays out <strong>₹1.00 (100P)</strong> for every winning share directly to holders' balances.
           </p>
 
           {isResolved ? (

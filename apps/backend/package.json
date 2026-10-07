@@ -3,6 +3,10 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "test": "bun test",
+    "start": "bun --env-file=.env index.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
@@ -12,6 +16,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",
+    "express-rate-limit": "^8.7.1",
     "uuidv4": "^6.2.13",
     "zod": "^4.6.5"
   }

@@ -1,5 +1,6 @@
 import React from "react";
 import { supabase } from "../hooks/useSupabase";
+import { formatRupees } from "../currency";
 
 interface NavbarProps {
   usdBalance: number;
@@ -20,13 +21,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onClaimFaucet,
   onOpenCreateModal,
 }) => {
-  // Format balance in cents to standard currency ($XX.XX)
-  const formattedBalance = isLoggedIn
-    ? (usdBalance / 100).toLocaleString("en-US", {
-        style: "currency",
-        currency: "USD",
-      })
-    : "$0.00";
+  // Format balance in paise to rupees (₹XX.XX)
+  const formattedBalance = isLoggedIn ? formatRupees(usdBalance) : formatRupees(0);
 
   // Shorten Solana or wallet address for clean display
   const shortAddress =
@@ -94,10 +90,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             className="btn-faucet"
             onClick={onClaimFaucet}
-            title="Claim $500 free test balance"
+            title="Claim ₹500 free test balance"
           >
-            <span className="hide-on-mobile">🎁 Claim +$500 Faucet</span>
-            <span className="show-on-mobile">🎁 +$500</span>
+            <span className="hide-on-mobile">🎁 Claim +₹500 Faucet</span>
+            <span className="show-on-mobile">🎁 +₹500</span>
           </button>
         )}
 

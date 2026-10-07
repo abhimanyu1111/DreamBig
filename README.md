@@ -14,14 +14,14 @@
 
 ## 📸 Overview
 
-DreamBig allows users to trade on the outcomes of real-world events using binary contracts (**YES** and **NO** shares). The contract price represents the market-implied probability of an event occurring (e.g., a **YES** share trading at **60¢** implies a **60% probability**).
+DreamBig allows users to trade on the outcomes of real-world events using binary contracts (**YES** and **NO** shares). The contract price represents the market-implied probability of an event occurring (e.g., a **YES** share trading at **60P (paise)** implies a **60% probability**).
 
 Every binary pair satisfies the fundamental invariant:
-$$\text{Price(YES)} + \text{Price(NO)} = \$1.00 \text{ (100¢)}$$
+$$\text{Price(YES)} + \text{Price(NO)} = \text{₹}1.00 \text{ (100P)}$$
 
 When the event resolves:
-- **Winning Outcome:** Redeems for **$1.00 (100¢)** per share.
-- **Losing Outcome:** Expires at **$0.00**.
+- **Winning Outcome:** Redeems for **₹1.00 (100P)** per share.
+- **Losing Outcome:** Expires at **₹0.00**.
 
 ---
 
@@ -29,32 +29,34 @@ When the event resolves:
 
 ### 1. 📊 Central Limit Order Book (CLOB) & Matching Engine
 - **Price-Time Priority:** Orders are matched against complementary orderbook tiers (lowest asks matched first).
-- **Complementary Counter-Orders:** Unfilled buy orders on YES at price $P$ automatically place a resting counter-order on NO at $(100 - P)¢$ with `reverseOrder: true`.
+- **Complementary Counter-Orders:** Unfilled buy orders on YES at price $P$ automatically place a resting counter-order on NO at $(100 - P)\text{P}$ with `reverseOrder: true`.
 - **Live Depth Visualization:** Visual orderbook depth displaying resting liquidity, share quantities, and spread.
+- **Order Cancellation:** Traders can cancel unfilled resting limit orders anytime to safely reclaim locked cash or unsold shares.
 
 ### 2. 🟣 Cryptographic Solana Authentication
 - **Ed25519 Wallet Signatures:** Authenticate using Phantom, Solflare, or any Solana Web3 wallet via Supabase Auth without passwords or seed phrase exposures.
 - **Protected Actions:** Trading (Buy/Sell), Contract Minting (Split/Merge), and Faucet claims strictly require an active cryptographic session.
 
 ### 3. 💼 Contract Splitting & Merging (Mint / Redeem)
-- **📥 Split ($1.00 $\rightarrow$ 1 YES + 1 NO):** Deposit $1.00 cash to mint 1 YES share and 1 NO share. Provides instantaneous market liquidity without relying on an automated market maker.
-- **📤 Merge (1 YES + 1 NO $\rightarrow$ $1.00 Cash):** Burn a complete pair of 1 YES and 1 NO shares anytime to redeem $1.00 back to cash.
+- **📥 Split (₹1.00 $\rightarrow$ 1 YES + 1 NO):** Deposit ₹1.00 cash to mint 1 YES share and 1 NO share. Provides instantaneous market liquidity without relying on an automated market maker.
+- **📤 Merge (1 YES + 1 NO $\rightarrow$ ₹1.00 Cash):** Burn a complete pair of 1 YES and 1 NO shares anytime to redeem ₹1.00 back to cash.
 
-### 4. 🛡️ Concurrency & Double-Spend Protection
-- **Pessimistic Row-Level Locking:** All financial operations execute inside PostgreSQL transactions using `SELECT ... FOR UPDATE` to eliminate race conditions and double-spending across concurrent requests.
+### 4. 🛡️ Concurrency, Row Locks & Invariant Conservation
+- **Pessimistic Row-Level Locking:** Financial operations take PostgreSQL locks (`SELECT ... FOR UPDATE`) in consistent order (`Market` then `User`) to prevent race conditions and eliminate double-spending.
+- **Strict Share Conservation:** Verified with property-based fuzz tests and invariant checks guaranteeing zero phantom liquidity.
 - **Automated Settlement Refunds:** When an Admin resolves a market:
-  - All winning position holders receive instant payouts ($1.00/share).
-  - Any **unfilled resting limit orders** have their locked cash or unsold shares automatically refunded to their balance.
+  - All winning position holders receive instant payouts (₹1.00 / 100P per share).
+  - Any **unfilled resting limit orders** have their locked cash or unsold shares automatically refunded.
 
 ### 5. 👑 Role-Based Admin Governance (RBAC)
 - **Whitelist Verification:** Restricted administrative actions verify the authenticated Solana public key against the admin whitelist.
 - **Admin Powers:**
   - Create new prediction markets with custom resolution criteria.
   - Settle & resolve live markets (triggering automated payouts and orderbook cleanup).
-  - Delete completed test markets with cascaded database cleanup.
+  - Delete completed test markets with cascaded database cleanup and fair-value refunds.
 
 ### 6. 🎁 Built-in Testnet Faucet
-- Logged-in users can claim **+$500.00 USD** in simulated trading balance with a single click.
+- Logged-in users can claim **+₹500.00** in simulated trading balance with a single click (rate-limited with cooldown).
 
 ---
 
@@ -217,17 +219,17 @@ Visit **`http://localhost:5173`** in your browser.
 ## 📖 Prediction Market Mechanics & Math
 
 ### The Complementary Orderbook Rule
-When a trader places an order to **Buy YES at 60¢**:
-- If a seller has an open ask for YES at 60¢ or lower, they match immediately.
-- If no seller is available, our engine does not leave an isolated bid: it places a complementary ask on the **NO orderbook at $(100 - 60) = 40¢$** (`reverseOrder: true`).
-- If another trader comes and buys NO at 40¢, the combined cash deposited ($60¢ + 40¢ = $1.00$) matches the payout liability, minting 1 YES share to Trader A and 1 NO share to Trader B!
+When a trader places an order to **Buy YES at 60P**:
+- If a seller has an open ask for YES at 60P or lower, they match immediately.
+- If no seller is available, our engine does not leave an isolated bid: it places a complementary ask on the **NO orderbook at $(100 - 60) = 40\text{P}$** (`reverseOrder: true`).
+- If another trader comes and buys NO at 40P, the combined cash deposited ($60\text{P} + 40\text{P} = 100\text{P} = \text{₹}1.00$) matches the payout liability, minting 1 YES share to Trader A and 1 NO share to Trader B!
 
 ### Market Resolution & Automated Refunds
 1. The Admin verifies the real-world outcome and settles the market to **YES** or **NO**.
-2. **Winning Position Holders:** Receive **$1.00** per held share.
+2. **Winning Position Holders:** Receive **₹1.00 (100P)** per held share.
 3. **Unfilled Limit Orders:** 
    - Unfilled BUY orders receive a **100% refund of locked cash**.
-   - Unfilled SELL orders receive **returned unsold shares** (and collect $1.00 if their outcome won).
+   - Unfilled SELL orders receive **returned unsold shares** (and collect ₹1.00 if their outcome won).
 4. **Orderbook Wiped:** Both YES and NO books are cleared to zero open orders.
 
 ---
