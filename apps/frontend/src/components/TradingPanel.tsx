@@ -196,15 +196,6 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
             <div className="resolved-banner">
               ⚠️ This market is already resolved to <strong>{market.resolution}</strong>. Trading is closed.
             </div>
-          ) : !isLoggedIn ? (
-            <div className="auth-required-banner">
-              <span className="auth-lock-icon">🔒</span>
-              <h4>Wallet Login Required</h4>
-              <p>Please connect your Solana wallet to buy or sell shares on this prediction market.</p>
-              <button type="button" className="btn-connect-solana" onClick={onConnectWallet}>
-                🟣 Login via Solana
-              </button>
-            </div>
           ) : (
             <form onSubmit={handleExecuteTrade} className="trade-form">
               {/* Buy or Sell Switcher */}
@@ -354,61 +345,48 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
             You can split cash into both shares, or merge pairs back to cash anytime.
           </p>
 
-          {!isLoggedIn ? (
-            <div className="auth-required-banner">
-              <span className="auth-lock-icon">🔒</span>
-              <h4>Wallet Login Required</h4>
-              <p>Please connect your Solana wallet to split or merge contract pairs.</p>
-              <button type="button" className="btn-connect-solana" onClick={onConnectWallet}>
-                🟣 Login via Solana
-              </button>
-            </div>
-          ) : (
-            <>
-              <div className="form-group">
-                <label>Contract Pairs (Shares)</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={contractQty}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === "") {
-                      setContractQty("");
-                    } else {
-                      const num = parseInt(val, 10);
-                      setContractQty(isNaN(num) ? "" : num);
-                    }
-                  }}
-                  onBlur={() => {
-                    if (contractQty === "" || Number(contractQty) < 1) {
-                      setContractQty(1);
-                    }
-                  }}
-                  placeholder="Enter pairs (e.g. 10)"
-                  className="number-input-full"
-                />
-              </div>
+          <div className="form-group">
+            <label>Contract Pairs (Shares)</label>
+            <input
+              type="number"
+              min="1"
+              value={contractQty}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === "") {
+                  setContractQty("");
+                } else {
+                  const num = parseInt(val, 10);
+                  setContractQty(isNaN(num) ? "" : num);
+                }
+              }}
+              onBlur={() => {
+                if (contractQty === "" || Number(contractQty) < 1) {
+                  setContractQty(1);
+                }
+              }}
+              placeholder="Enter pairs (e.g. 10)"
+              className="number-input-full"
+            />
+          </div>
 
-              <div className="mint-actions-row">
-                <button
-                  onClick={handleSplit}
-                  disabled={loading || isResolved}
-                  className="btn-split"
-                >
-                  📥 Split {formatRupees(numericContractQty * PAYOUT_PAISE)} → {numericContractQty} YES + {numericContractQty} NO
-                </button>
+          <div className="mint-actions-row">
+            <button
+              onClick={handleSplit}
+              disabled={loading || isResolved}
+              className="btn-split"
+            >
+              📥 Split {formatRupees(numericContractQty * PAYOUT_PAISE)} → {numericContractQty} YES + {numericContractQty} NO
+            </button>
 
-                <button
-                  onClick={handleMerge}
-                  disabled={loading}
-                  className="btn-merge"
-                >
-                  📤 Merge {numericContractQty} YES & NO → {formatRupees(numericContractQty * PAYOUT_PAISE)} Cash
-                </button>
-              </div>
-            </>
-          )}
+            <button
+              onClick={handleMerge}
+              disabled={loading}
+              className="btn-merge"
+            >
+              📤 Merge {numericContractQty} YES & NO → {formatRupees(numericContractQty * PAYOUT_PAISE)} Cash
+            </button>
+          </div>
         </div>
       )}
 
