@@ -13,6 +13,8 @@ export const MarketCard: React.FC<MarketCardProps> = ({
   onSelect,
 }) => {
   const isResolved = Boolean(market.resolution);
+  const yesPrice = market.yesPrice ?? 50;
+  const noPrice = market.noPrice ?? 50;
 
   return (
     <div
@@ -34,18 +36,18 @@ export const MarketCard: React.FC<MarketCardProps> = ({
       <div className="prob-bar-container">
         <div
           className="prob-bar-yes"
-          style={{ width: `${market.yesPrice}%` }}
+          style={{ width: `${yesPrice}%` }}
         ></div>
         <div
           className="prob-bar-no"
-          style={{ width: `${100 - market.yesPrice}%` }}
+          style={{ width: `${100 - yesPrice}%` }}
         ></div>
       </div>
 
       <div className="market-odds-row">
         <div className="odds-badge yes">
           <span className="odds-label">YES</span>
-          <span className="odds-val">{market.yesPrice}P</span>
+          <span className="odds-val">{yesPrice}P</span>
         </div>
 
         <div className="market-volume">
@@ -54,7 +56,7 @@ export const MarketCard: React.FC<MarketCardProps> = ({
 
         <div className="odds-badge no">
           <span className="odds-label">NO</span>
-          <span className="odds-val">{market.noPrice}P</span>
+          <span className="odds-val">{noPrice}P</span>
         </div>
       </div>
     </div>

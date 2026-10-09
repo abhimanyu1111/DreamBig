@@ -23,11 +23,11 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
   // Trading State
   const [side, setSide] = useState<"yes" | "no">("yes");
   const [type, setType] = useState<"buy" | "sell">("buy");
-  const [price, setPrice] = useState<number>(side === "yes" ? market.yesPrice : market.noPrice);
-  const [qty, setQty] = useState<number>(10);
+  const [price, setPrice] = useState<number>(side === "yes" ? (market.yesPrice ?? 50) : (market.noPrice ?? 50));
+  const [qty, setQty] = useState<number | string>(10);
 
   // Mint / Merge State
-  const [contractQty, setContractQty] = useState<number>(10);
+  const [contractQty, setContractQty] = useState<number | string>(10);
 
   // Resolution State (Admin only)
   const [resolutionChoice, setResolutionChoice] = useState<"YES" | "NO">("YES");
@@ -36,16 +36,19 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ message: string; isError: boolean } | null>(null);
 
-  // Synchronize price and reset feedback when switching to a different market
+  // Synchronize price and reset feedback when switching to a different market or prices change
   useEffect(() => {
-    setPrice(side === "yes" ? market.yesPrice : market.noPrice);
+    setPrice(side === "yes" ? (market.yesPrice ?? 50) : (market.noPrice ?? 50));
     setFeedback(null);
-  }, [market.id]);
+  }, [market.id, market.yesPrice, market.noPrice]);
+
+  const numericQty = Math.max(1, Number(qty) || 1);
+  const numericContractQty = Math.max(1, Number(contractQty) || 1);
 
   // Cost and payout calculation
-  const totalCost = formatRupees(price * qty);
-  const maxPayout = formatRupees(PAYOUT_PAISE * qty);
-  const potentialProfit = formatRupees((PAYOUT_PAISE - price) * qty);
+  const totalCost = formatRupees(price * numericQty);
+  const maxPayout = formatRupees(PAYOUT_PAISE * numericQty);
+  const potentialProfit = formatRupees((PAYOUT_PAISE - price) * numericQty);
 
   // Handle Trade Execution
   const handleExecuteTrade = async (e: React.FormEvent) => {
@@ -64,7 +67,7 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
         side,
         type,
         price,
-        qty,
+        qty: numericQty,
       });
 
       setFeedback({
@@ -91,7 +94,7 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
     setLoading(true);
     setFeedback(null);
     try {
-      const res = await splitContract(market.id, contractQty);
+      const res = await splitContract(market.id, numericContractQty);
       setFeedback({ message: res.message, isError: false });
       onTradeSuccess();
     } catch (err: any) {
@@ -113,7 +116,7 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
     setLoading(true);
     setFeedback(null);
     try {
-      const res = await mergeContract(market.id, contractQty);
+      const res = await mergeContract(market.id, numericContractQty);
       setFeedback({ message: res.message, isError: false });
       onTradeSuccess();
     } catch (err: any) {
@@ -229,11 +232,11 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
                   className={`outcome-btn yes ${side === "yes" ? "active" : ""}`}
                   onClick={() => {
                     setSide("yes");
-                    setPrice(market.yesPrice);
+                    setPrice(market.yesPrice ?? 50);
                   }}
                 >
                   <span className="outcome-name">YES</span>
-                  <span className="outcome-price">{formatPaise(market.yesPrice)}</span>
+                  <span className="outcome-price">{formatPaise(market.yesPrice ?? 50)}</span>
                 </button>
 
                 <button
@@ -241,11 +244,11 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
                   className={`outcome-btn no ${side === "no" ? "active" : ""}`}
                   onClick={() => {
                     setSide("no");
-                    setPrice(market.noPrice);
+                    setPrice(market.noPrice ?? 50);
                   }}
                 >
                   <span className="outcome-name">NO</span>
-                  <span className="outcome-price">{formatPaise(market.noPrice)}</span>
+                  <span className="outcome-price">{formatPaise(market.noPrice ?? 50)}</span>
                 </button>
               </div>
 
@@ -286,7 +289,21 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
                   type="number"
                   min="1"
                   value={qty}
-                  onChange={(e) => setQty(Math.max(1, Number(e.target.value)))}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === "") {
+                      setQty("");
+                    } else {
+                      const num = parseInt(val, 10);
+                      setQty(isNaN(num) ? "" : num);
+                    }
+                  }}
+                  onBlur={() => {
+                    if (qty === "" || Number(qty) < 1) {
+                      setQty(1);
+                    }
+                  }}
+                  placeholder="Enter shares (e.g. 20)"
                   className="number-input-full"
                 />
               </div>
@@ -354,7 +371,21 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
                   type="number"
                   min="1"
                   value={contractQty}
-                  onChange={(e) => setContractQty(Math.max(1, Number(e.target.value)))}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === "") {
+                      setContractQty("");
+                    } else {
+                      const num = parseInt(val, 10);
+                      setContractQty(isNaN(num) ? "" : num);
+                    }
+                  }}
+                  onBlur={() => {
+                    if (contractQty === "" || Number(contractQty) < 1) {
+                      setContractQty(1);
+                    }
+                  }}
+                  placeholder="Enter pairs (e.g. 10)"
                   className="number-input-full"
                 />
               </div>
@@ -365,7 +396,7 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
                   disabled={loading || isResolved}
                   className="btn-split"
                 >
-                  📥 Split {formatRupees(contractQty * PAYOUT_PAISE)} → {contractQty} YES + {contractQty} NO
+                  📥 Split {formatRupees(numericContractQty * PAYOUT_PAISE)} → {numericContractQty} YES + {numericContractQty} NO
                 </button>
 
                 <button
@@ -373,7 +404,7 @@ export const TradingPanel: React.FC<TradingPanelProps> = ({
                   disabled={loading}
                   className="btn-merge"
                 >
-                  📤 Merge {contractQty} YES & NO → {formatRupees(contractQty * PAYOUT_PAISE)} Cash
+                  📤 Merge {numericContractQty} YES & NO → {formatRupees(numericContractQty * PAYOUT_PAISE)} Cash
                 </button>
               </div>
             </>

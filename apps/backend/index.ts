@@ -109,10 +109,21 @@ app.get("/markets/:id", async (req: Request, res: Response) => {
       return;
     }
 
+    const yesOrderbook = parseOrderbook(market.yesOrderbook);
+    const noOrderbook = parseOrderbook(market.noOrderbook);
+
+    const yesPrices = Object.keys(yesOrderbook).map(Number).sort((a, b) => a - b);
+    const noPrices = Object.keys(noOrderbook).map(Number).sort((a, b) => a - b);
+
+    const bestYesPrice = yesPrices.length > 0 ? yesPrices[0] : 50;
+    const bestNoPrice = noPrices.length > 0 ? noPrices[0] : 50;
+
     res.json({
       ...market,
-      yesOrderbook: parseOrderbook(market.yesOrderbook),
-      noOrderbook: parseOrderbook(market.noOrderbook),
+      yesPrice: bestYesPrice,
+      noPrice: bestNoPrice,
+      yesOrderbook,
+      noOrderbook,
     });
   } catch (error) {
     console.error("Error fetching market:", error);
