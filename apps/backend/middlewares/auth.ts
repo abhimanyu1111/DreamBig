@@ -28,6 +28,7 @@ const supabase = createClient(
 // Known admin addresses (Your Solana wallet public key)
 const DEFAULT_ADMINS = [
   "EpmsQDaWxXQ5sLsnmbFcZMRSXZX6sR58cshNqv4AYL2M",
+  "admin_abhimanyu@db.com"
 ];
 
 // Helper: Check if an address is configured as an Admin
