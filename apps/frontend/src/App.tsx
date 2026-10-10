@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useUser } from "./hooks/useUser";
-import { supabase } from "./hooks/useSupabase";
 import type { Market, UserPosition, OrderHistoryItem } from "./types";
 import {
   fetchMarkets,
@@ -19,6 +18,7 @@ import { OrderbookView } from "./components/OrderbookView";
 import { PositionsTable } from "./components/PositionsTable";
 import { OrderHistoryTable } from "./components/OrderHistoryTable";
 import { CreateMarketModal } from "./components/CreateMarketModal";
+import { LoginModal } from "./components/LoginModal";
 
 import "./App.css";
 
@@ -39,39 +39,29 @@ function App() {
   // UI State
   const [bottomTab, setBottomTab] = useState<"positions" | "history">("positions");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isAnonymous, setIsAnonymous] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("dreambig_anon") === "true";
+    } catch {
+      return false;
+    }
+  });
   const [loading, setLoading] = useState(true);
 
-  // Trigger Solana Web3 Connect
-  const handleConnectWallet = async () => {
-    if (typeof window !== "undefined" && !(window as any).solana) {
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      if (isMobile) {
-        const currentUrl = encodeURIComponent(window.location.href);
-        const openPhantom = window.confirm(
-          "Solana wallet extension not found in mobile browser.\n\nWould you like to open DreamBig in the Phantom Wallet app to log in?"
-        );
-        if (openPhantom) {
-          window.location.href = `https://phantom.app/ul/browse/${currentUrl}`;
-        }
-        return;
-      } else {
-        alert("No Solana wallet extension detected! Please install the Phantom extension (phantom.app) in your browser.");
-        return;
-      }
-    }
+  const handleToggleAnonymous = () => {
+    setIsAnonymous((prev) => {
+      const nextVal = !prev;
+      try {
+        localStorage.setItem("dreambig_anon", String(nextVal));
+      } catch {}
+      return nextVal;
+    });
+  };
 
-    try {
-      const res = await supabase.auth.signInWithWeb3({
-        chain: "solana",
-        statement: "I confirm that I want to sign in to prediction market DreamBig",
-      });
-      if (res.error) {
-        alert("Login notice: " + res.error.message);
-      }
-    } catch (err: any) {
-      console.error("Solana login error:", err);
-      alert("Solana login notice: " + (err.message || "User cancelled or wallet rejected"));
-    }
+  // Open Unified Login Modal (Supports Solana & Email)
+  const handleConnectWallet = () => {
+    setIsLoginModalOpen(true);
   };
 
   // Load all app data from backend with independent error boundaries
@@ -186,12 +176,15 @@ function App() {
       {/* Top Navigation */}
       <Navbar
         usdBalance={usdBalance}
-        walletAddress={walletAddress}
+        walletAddress={walletAddress || user?.email || ""}
         isLoggedIn={isLoggedIn}
         isAdmin={isAdmin}
+        isAnonymous={isAnonymous}
+        onToggleAnonymous={handleToggleAnonymous}
         onRefresh={loadData}
         onClaimFaucet={handleClaimFaucet}
         onOpenCreateModal={() => setIsCreateModalOpen(true)}
+        onOpenLoginModal={() => setIsLoginModalOpen(true)}
       />
 
       <main className="main-content">
@@ -321,6 +314,20 @@ function App() {
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onSuccess={loadData}
+      />
+
+      {/* Unified Login Modal (Solana Web3 + Email Auth + Anonymity) */}
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        onSuccess={loadData}
+        isAnonymous={isAnonymous}
+        onToggleAnonymous={(val) => {
+          setIsAnonymous(val);
+          try {
+            localStorage.setItem("dreambig_anon", String(val));
+          } catch {}
+        }}
       />
     </div>
   );

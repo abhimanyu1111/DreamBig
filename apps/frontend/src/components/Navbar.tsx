@@ -7,9 +7,12 @@ interface NavbarProps {
   walletAddress: string;
   isLoggedIn: boolean;
   isAdmin: boolean;
+  isAnonymous: boolean;
+  onToggleAnonymous: () => void;
   onRefresh: () => void;
   onClaimFaucet: () => void;
   onOpenCreateModal: () => void;
+  onOpenLoginModal: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -17,50 +20,29 @@ export const Navbar: React.FC<NavbarProps> = ({
   walletAddress,
   isLoggedIn,
   isAdmin,
+  isAnonymous,
+  onToggleAnonymous,
   onRefresh,
   onClaimFaucet,
   onOpenCreateModal,
+  onOpenLoginModal,
 }) => {
   // Format balance in paise to rupees (₹XX.XX)
   const formattedBalance = isLoggedIn ? formatRupees(usdBalance) : formatRupees(0);
 
-  // Shorten Solana or wallet address for clean display
-  const shortAddress =
-    walletAddress.length > 16
-      ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
-      : walletAddress;
-
-  const handleSolanaLogin = async () => {
-    if (typeof window !== "undefined" && !(window as any).solana) {
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      if (isMobile) {
-        const currentUrl = encodeURIComponent(window.location.href);
-        const openPhantom = window.confirm(
-          "Solana wallet extension not found in mobile browser.\n\nWould you like to open DreamBig in the Phantom Wallet app to log in?"
-        );
-        if (openPhantom) {
-          window.location.href = `https://phantom.app/ul/browse/${currentUrl}`;
-        }
-        return;
-      } else {
-        alert("No Solana wallet extension detected! Please install the Phantom extension (phantom.app) in your browser.");
-        return;
-      }
-    }
-
-    try {
-      const res = await supabase.auth.signInWithWeb3({
-        chain: "solana",
-        statement: "I confirm that I want to sign in to prediction market DreamBig",
-      });
-      if (res.error) {
-        alert("Login notice: " + res.error.message);
-      }
-    } catch (err: any) {
-      console.error("Solana login error:", err);
-      alert("Solana login notice: " + (err.message || "User cancelled or wallet rejected"));
-    }
-  };
+  // Determine display name based on anonymity preference
+  let displayAddress = walletAddress;
+  if (isAnonymous) {
+    const seed = walletAddress
+      ? (walletAddress.includes("@") ? walletAddress.split("@")[0].slice(0, 4) : walletAddress.slice(0, 4))
+      : "User";
+    displayAddress = `🕶️ Anon_${seed}`;
+  } else if (walletAddress.includes("@")) {
+    const parts = walletAddress.split("@");
+    displayAddress = parts[0].length > 4 ? `${parts[0].slice(0, 3)}...` : parts[0];
+  } else if (walletAddress.length > 16) {
+    displayAddress = `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
+  }
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -106,21 +88,29 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         ) : null}
 
-        {/* Wallet Connection */}
+        {/* Identity & Wallet Connection */}
         {isLoggedIn ? (
           <div className="wallet-connected">
             <span className="wallet-dot"></span>
             <span className="wallet-address" title={walletAddress}>
-              {shortAddress}
+              {displayAddress}
             </span>
+            <button
+              type="button"
+              className={`btn-anon-badge ${isAnonymous ? "active" : ""}`}
+              onClick={onToggleAnonymous}
+              title={isAnonymous ? "Identity is hidden (Click to make public)" : "Identity is public (Click to make anonymous)"}
+            >
+              {isAnonymous ? "🕶️ Anon" : "👁️ Public"}
+            </button>
             {isAdmin && <span className="admin-pill">Admin</span>}
             <button className="btn-logout" onClick={handleLogout}>
               Logout
             </button>
           </div>
         ) : (
-          <button className="btn-connect-solana" onClick={handleSolanaLogin}>
-            🟣 Login via Solana
+          <button className="btn-connect-solana" onClick={onOpenLoginModal}>
+            🟣 Connect / Log In
           </button>
         )}
       </div>
